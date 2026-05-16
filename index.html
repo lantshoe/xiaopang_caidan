@@ -1,10 +1,45 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>xiaopang_caidan</title>
+
+    <!-- 关键：移动端适配 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+    <!-- iOS 全屏体验 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+
+    <!-- Android Chrome 状态栏颜色，跟你的主题绿色一致 -->
+    <meta name="theme-color" content="#e8f5ee" />
+
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <title>点单</title>
+
+    <style>
+      /* 消除默认边距，防止出现白边 */
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      html, body {
+        width: 100%;
+        height: 100%;
+        /* 防止 iOS 橡皮筋滚动导致背景露白 */
+        overscroll-behavior: none;
+        /* 背景色和 App 主题一致，防止滚动过头时露出白底 */
+        background-color: #e8f5ee;
+      }
+
+      #root {
+        width: 100%;
+        height: 100%;
+        /* 用 dvh 兼容 iOS Safari 地址栏收起/展开 */
+        min-height: 100dvh;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

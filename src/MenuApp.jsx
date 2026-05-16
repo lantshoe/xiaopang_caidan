@@ -324,7 +324,7 @@ export default function MenuApp() {
 
   // ─────────────────────────────────────────────────────────────
   return (
-    <div style={{ height:"100dvh", display:"flex", flexDirection:"column", background:"linear-gradient(160deg,#e8f5ee 0%,#f0faf4 40%,#e4f2f8 100%)", fontFamily:"'Noto Sans SC','PingFang SC',sans-serif", maxWidth:480, margin:"0 auto", overflow:"hidden", position:"relative" }}>
+    <div style={{ height:"100dvh", display:"flex", flexDirection:"column", background:"linear-gradient(160deg,#e8f5ee 0%,#f0faf4 40%,#e4f2f8 100%)", fontFamily:"'Noto Sans SC','PingFang SC',sans-serif", width:"100%", overflow:"hidden", position:"relative" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@700&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
