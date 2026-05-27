@@ -5,23 +5,135 @@ import ShoppingPage from "./ShoppingPage";
 import HistoryPage from "./HistoryPage";
 import MenuManagePage from "./MenuManagePage";
 
-// ─── Supabase 初始化 ───────────────────────────────────────────
 const SUPABASE_URL  = "https://udawpaivdegqhlyvnffs.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkYXdwYWl2ZGVncWhseXZuZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDUxNTAsImV4cCI6MjA5NDA4MTE1MH0.2aPiAEdFq1S4NBQ-BUDjhGx4WpLzvvUMk_1e0njROWg";
+
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ─── 常量 ──────────────────────────────────────────────────────
 const PALETTE = [
-  { bg:"#d4ede3", fg:"#2d7a58" }, { bg:"#fde8d8", fg:"#c4622d" },
-  { bg:"#dde8f5", fg:"#2c5f8a" }, { bg:"#f0e6f5", fg:"#7040a0" },
-  { bg:"#fdf0d5", fg:"#a07030" }, { bg:"#e5f0e0", fg:"#3a7030" },
+  { bg:"#d4ede3", fg:"#2d7a58" },{ bg:"#fde8d8", fg:"#c4622d" },
+  { bg:"#dde8f5", fg:"#2c5f8a" },{ bg:"#f0e6f5", fg:"#7040a0" },
+  { bg:"#fdf0d5", fg:"#a07030" },{ bg:"#e5f0e0", fg:"#3a7030" },
 ];
 function hashId(str) { let h=0; for(let i=0;i<str.length;i++) h=(h*31+str.charCodeAt(i))&0xffff; return h; }
 function pal(id) { return PALETTE[hashId(id) % PALETTE.length]; }
 function generateOrderNo() {
   const d=new Date(), pad=n=>String(n).padStart(2,"0");
   return `ORD-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${String(Math.floor(Math.random()*1000)).padStart(3,"0")}`;
+}
+
+const TABS = [
+  { id:"menu",     label:"点单",  defaultIcon:"🍽" },
+  { id:"admin",    label:"订单",  defaultIcon:"📋" },
+  { id:"history",  label:"历史",  defaultIcon:"🕐" },
+  { id:"manage",   label:"菜单",  defaultIcon:"⚙️" },
+  { id:"shopping", label:"采购",  defaultIcon:"🛒" },
+];
+
+// ─── 图标配置弹窗 ──────────────────────────────────────────────
+function IconConfigModal({ supabase, configs, onSave, onClose }) {
+  const BUCKET = "menu-assets";
+  const [uploading, setUploading] = useState(null); // key of uploading item
+  const [localConfigs, setLocalConfigs] = useState({ ...configs });
+  const fileRefs = useRef({});
+
+  const handleUpload = async (key, file) => {
+    if (!file) return;
+    setUploading(key);
+    try {
+      const ext  = file.name.split(".").pop();
+      const path = `icons/${key}_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true, contentType: file.type });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      // 更新数据库
+      await supabase.from("app_config").upsert({ key, value: data.publicUrl });
+      setLocalConfigs(c => ({ ...c, [key]: data.publicUrl }));
+    } catch { alert("上传失败，请重试"); }
+    finally { setUploading(null); }
+  };
+
+  const handleClear = async (key) => {
+    await supabase.from("app_config").upsert({ key, value: "" });
+    setLocalConfigs(c => ({ ...c, [key]: "" }));
+  };
+
+  const iconItems = [
+    ...TABS.map(t => ({ key: `icon_${t.id}`, label: `"${t.label}" 图标`, defaultEmoji: t.defaultIcon })),
+    { key: "icon_logo", label: "左上角 Logo", defaultEmoji: "✦" },
+  ];
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:600, display:"flex", alignItems:"flex-end" }}>
+      <div onClick={onClose} style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.5)", backdropFilter:"blur(4px)" }} />
+      <div style={{ position:"relative", width:"100%", background:"#f4faf7", borderRadius:"24px 24px 0 0", maxHeight:"85vh", display:"flex", flexDirection:"column", animation:"slideUp 0.3s cubic-bezier(.22,.68,0,1.2)" }}>
+        <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 0" }}>
+          <div style={{ width:36, height:4, borderRadius:2, background:"#c8e0d4" }} />
+        </div>
+        <div style={{ padding:"12px 20px 0", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+          <div>
+            <div style={{ fontSize:16, fontWeight:700, color:"#1a3a2a" }}>图标 / 动图设置</div>
+            <div style={{ fontSize:11, color:"#7a9a85", marginTop:2 }}>支持 GIF、PNG、WebP，建议尺寸 64×64</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:"#aaa", fontSize:22, cursor:"pointer", lineHeight:1 }}>×</button>
+        </div>
+
+        <div style={{ flex:1, overflowY:"auto", padding:"16px 20px 8px" }}>
+          {iconItems.map(({ key, label, defaultEmoji }) => {
+            const url = localConfigs[key];
+            const busy = uploading === key;
+            return (
+              <div key={key} style={{ display:"flex", alignItems:"center", gap:14, padding:"12px 0", borderBottom:"1px solid rgba(45,122,88,0.08)" }}>
+                {/* 预览 */}
+                <div style={{ width:52, height:52, borderRadius:12, background:"rgba(45,122,88,0.08)", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden", border:"1.5px solid rgba(45,122,88,0.15)" }}>
+                  {url
+                    ? <img src={url} alt={label} style={{ width:"100%", height:"100%", objectFit:"contain" }} />
+                    : <span style={{ fontSize:22 }}>{defaultEmoji}</span>
+                  }
+                </div>
+
+                {/* 信息 */}
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:"#1a3a2a", marginBottom:4 }}>{label}</div>
+                  <div style={{ fontSize:11, color: url ? "#2d7a58" : "#aaa" }}>
+                    {url ? "已上传自定义图标" : "使用默认 Emoji"}
+                  </div>
+                </div>
+
+                {/* 操作 */}
+                <div style={{ display:"flex", flexDirection:"column", gap:6, flexShrink:0 }}>
+                  <button
+                    onClick={() => fileRefs.current[key]?.click()}
+                    disabled={busy}
+                    style={{ padding:"6px 14px", background: busy ? "#ccc" : "#2d7a58", color:"#fff", border:"none", borderRadius:10, fontSize:12, fontWeight:600, cursor: busy ? "not-allowed" : "pointer" }}
+                  >
+                    {busy ? "上传中…" : "上传"}
+                  </button>
+                  {url && (
+                    <button onClick={() => handleClear(key)} style={{ padding:"6px 14px", background:"#fff0f0", color:"#e05a3a", border:"none", borderRadius:10, fontSize:12, cursor:"pointer" }}>清除</button>
+                  )}
+                </div>
+                <input
+                  ref={el => fileRefs.current[key] = el}
+                  type="file" accept="image/*,.gif"
+                  onChange={e => handleUpload(key, e.target.files?.[0])}
+                  style={{ display:"none" }}
+                />
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ padding:"12px 20px 32px", flexShrink:0 }}>
+          <button onClick={() => { onSave(localConfigs); onClose(); }} style={{ width:"100%", padding:14, background:"linear-gradient(135deg,#2d7a58,#3a9068)", color:"#fff", border:"none", borderRadius:16, fontSize:15, fontWeight:700, cursor:"pointer" }}>
+            完成
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── 小组件 ────────────────────────────────────────────────────
@@ -79,25 +191,26 @@ function CartSheet({ cartItems, menuItems, onAdd, onSub, onClear, onOrder, onClo
           <button onClick={onClear} style={{ background:"none", border:"none", color:"#aaa", fontSize:12, cursor:"pointer", padding:"4px 8px" }}>清空</button>
         </div>
         <div style={{ overflowY:"auto", flex:1, padding:"8px 20px" }}>
-          {cartItems.length === 0 ? <div style={{ textAlign:"center", padding:32, color:"#aaa", fontSize:14 }}>购物车是空的</div>
-          : cartItems.map(({ id, qty }) => {
-            const item = menuItems.find(m=>m.id===id); if (!item) return null;
-            const p = pal(id);
-            return (
-              <div key={id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:"1px solid #f0f5f2" }}>
-                <div style={{ width:40, height:40, borderRadius:10, background:p.bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:700, color:p.fg, fontFamily:"'Noto Serif SC',serif", flexShrink:0 }}>{item.name.charAt(0)}</div>
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13, fontWeight:600, color:"#1a3a2a" }}>{item.name}</div>
-                  <div style={{ fontSize:12, color:"#2d7a58", fontWeight:700 }}>¥{item.price}</div>
+          {cartItems.length === 0
+            ? <div style={{ textAlign:"center", padding:32, color:"#aaa", fontSize:14 }}>购物车是空的</div>
+            : cartItems.map(({ id, qty }) => {
+              const item = menuItems.find(m=>m.id===id); if (!item) return null;
+              const p = pal(id);
+              return (
+                <div key={id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0", borderBottom:"1px solid #f0f5f2" }}>
+                  <div style={{ width:40, height:40, borderRadius:10, background:p.bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:700, color:p.fg, fontFamily:"'Noto Serif SC',serif", flexShrink:0 }}>{item.name.charAt(0)}</div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:"#1a3a2a" }}>{item.name}</div>
+                    <div style={{ fontSize:12, color:"#2d7a58", fontWeight:700 }}>¥{item.price}</div>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                    <button onClick={()=>onSub(id)} style={{ width:26, height:26, borderRadius:"50%", border:"1.5px solid #2d7a58", background:"transparent", color:"#2d7a58", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700 }}>−</button>
+                    <span style={{ fontSize:14, fontWeight:600, minWidth:16, textAlign:"center" }}>{qty}</span>
+                    <button onClick={()=>onAdd(id)} style={{ width:26, height:26, borderRadius:"50%", border:"none", background:"#2d7a58", color:"#fff", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700 }}>+</button>
+                  </div>
                 </div>
-                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  <button onClick={()=>onSub(id)} style={{ width:26, height:26, borderRadius:"50%", border:"1.5px solid #2d7a58", background:"transparent", color:"#2d7a58", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700 }}>−</button>
-                  <span style={{ fontSize:14, fontWeight:600, minWidth:16, textAlign:"center" }}>{qty}</span>
-                  <button onClick={()=>onAdd(id)} style={{ width:26, height:26, borderRadius:"50%", border:"none", background:"#2d7a58", color:"#fff", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700 }}>+</button>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
         </div>
         {cartItems.length > 0 && (
           <div style={{ padding:"14px 20px 32px", borderTop:"1px solid #f0f5f2" }}>
@@ -105,7 +218,7 @@ function CartSheet({ cartItems, menuItems, onAdd, onSub, onClear, onOrder, onClo
               <span style={{ color:"#7a9a85", fontSize:14 }}>合计</span>
               <span style={{ fontSize:20, fontWeight:700, color:"#1a3a2a" }}>¥{totalPrice}</span>
             </div>
-            <button onClick={onOrder} disabled={ordering} style={{ width:"100%", padding:15, background: ordering?"#aaa":"linear-gradient(135deg,#2d7a58,#3a9068)", color:"#fff", border:"none", borderRadius:16, fontSize:16, fontWeight:700, cursor: ordering?"not-allowed":"pointer", boxShadow: ordering?"none":"0 4px 20px rgba(45,122,88,0.4)", letterSpacing:"0.5px" }}>
+            <button onClick={onOrder} disabled={ordering} style={{ width:"100%", padding:15, background:ordering?"#aaa":"linear-gradient(135deg,#2d7a58,#3a9068)", color:"#fff", border:"none", borderRadius:16, fontSize:16, fontWeight:700, cursor:ordering?"not-allowed":"pointer", boxShadow:ordering?"none":"0 4px 20px rgba(45,122,88,0.4)", letterSpacing:"0.5px" }}>
               {ordering ? "下单中..." : "确认下单"}
             </button>
           </div>
@@ -189,7 +302,6 @@ function MenuPage({ supabase }) {
   return (
     <>
       <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
-        {/* 左侧分类 */}
         <div style={{ width:68, flexShrink:0, overflowY:"auto", background:"rgba(255,255,255,0.35)", backdropFilter:"blur(10px)", borderRight:"1px solid rgba(45,122,88,0.1)", display:"flex", flexDirection:"column", gap:2, padding:"8px 4px" }}>
           {categories.map(cat => {
             const active = activeCat===cat.id;
@@ -202,7 +314,6 @@ function MenuPage({ supabase }) {
             );
           })}
         </div>
-        {/* 右侧菜品 */}
         <div ref={rightRef} onScroll={handleRightScroll} style={{ flex:1, overflowY:"auto", padding:"0 12px 120px" }}>
           {categories.map(cat => (
             <div key={cat.id} ref={el=>catRefs.current[cat.id]=el}>
@@ -218,12 +329,12 @@ function MenuPage({ supabase }) {
         </div>
       </div>
 
-      {/* FAB */}
-      <button onClick={()=>setShowCart(true)} style={{ position:"fixed", bottom:28, right:20, width:60, height:60, borderRadius:"50%", background:totalQty>0?"linear-gradient(135deg,#2d7a58,#3a9068)":"rgba(255,255,255,0.85)", border:totalQty>0?"none":"1.5px solid rgba(45,122,88,0.25)", backdropFilter:"blur(12px)", boxShadow:totalQty>0?"0 6px 24px rgba(45,122,88,0.45)":"0 4px 16px rgba(0,0,0,0.1)", cursor:"pointer", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <span style={{ fontSize:24 }}>🛒</span>
+      {/* FAB 购物车 */}
+      <button onClick={()=>setShowCart(true)} style={{ position:"fixed", bottom:72, right:20, width:60, height:60, borderRadius:"50%", background:totalQty>0?"linear-gradient(135deg,#2d7a58,#3a9068)":"rgba(255,255,255,0.85)", border:totalQty>0?"none":"1.5px solid rgba(45,122,88,0.25)", backdropFilter:"blur(12px)", boxShadow:totalQty>0?"0 6px 24px rgba(45,122,88,0.45)":"0 4px 16px rgba(0,0,0,0.1)", cursor:"pointer", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
+        <span style={{ fontSize:26 }}>🛒</span>
         {totalQty>0 && <div style={{ position:"absolute", top:-2, right:-2, background:"#e05a3a", color:"#fff", borderRadius:"50%", minWidth:20, height:20, fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px", border:"2px solid #fff" }}>{totalQty>99?"99+":totalQty}</div>}
       </button>
-      {totalQty>0 && <div style={{ position:"fixed", bottom:34, right:88, background:"#1a3a2a", color:"#fff", borderRadius:20, padding:"6px 14px", fontSize:13, fontWeight:700, boxShadow:"0 4px 16px rgba(0,0,0,0.2)", zIndex:100, pointerEvents:"none", animation:"fadeIn 0.2s ease" }}>¥{totalPrice}</div>}
+      {totalQty>0 && <div style={{ position:"fixed", bottom:78, right:88, background:"#1a3a2a", color:"#fff", borderRadius:20, padding:"6px 14px", fontSize:13, fontWeight:700, boxShadow:"0 4px 16px rgba(0,0,0,0.2)", zIndex:100, pointerEvents:"none" }}>¥{totalPrice}</div>}
 
       {showCart && <CartSheet cartItems={cartItems} menuItems={menuItems} onAdd={addToCart} onSub={subFromCart} onClear={()=>setCart({})} onOrder={handleOrder} onClose={()=>setShowCart(false)} totalPrice={totalPrice} ordering={ordering} />}
 
@@ -238,20 +349,51 @@ function MenuPage({ supabase }) {
   );
 }
 
-// ─── TABS 配置 ─────────────────────────────────────────────────
-const TABS = [
-  { id:"menu",     label:"点单", icon:"🍽" },
-  { id:"admin",    label:"订单", icon:"📋" },
-  { id:"history",  label:"历史", icon:"🕐" },
-  { id:"manage",   label:"菜单", icon:"⚙️" },
-  { id:"shopping", label:"采购", icon:"🛒" },
-];
-
 // ─── 主 App ────────────────────────────────────────────────────
 export default function App() {
-  const [tab, setTab] = useState("menu");
+  const [tab,          setTab]          = useState("menu");
+  const [configs,      setConfigs]      = useState({});
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [showIconCfg,  setShowIconCfg]  = useState(false);
+  const [logoPressed,  setLogoPressed]  = useState(false);
+
+  // 长按 Logo 3 秒打开图标配置
+  const logoTimer = useRef(null);
 
   const TITLE = { menu:"今日菜单 ✦", admin:"订单管理", history:"历史订单", manage:"菜单管理", shopping:"采购备忘" };
+
+  // ── 加载配置 ──
+  const loadConfigs = useCallback(async () => {
+    const { data } = await supabase.from("app_config").select("key,value");
+    const map = {};
+    (data ?? []).forEach(r => { map[r.key] = r.value; });
+    setConfigs(map);
+    setConfigLoaded(true);
+  }, []);
+
+  useEffect(() => { loadConfigs(); }, [loadConfigs]);
+
+  // 获取图标：有自定义图片就用图片，否则用默认 emoji
+  const getTabIcon = (tabId, defaultEmoji) => {
+    const url = configs[`icon_${tabId}`];
+    if (url) return <img src={url} alt={tabId} style={{ width:32, height:32, objectFit:"contain" }} />;
+    return <span style={{ fontSize:22, lineHeight:1 }}>{defaultEmoji}</span>;
+  };
+
+  const logoUrl = configs["icon_logo"];
+
+  // 长按 Logo → 打开图标配置
+  const handleLogoPress = () => {
+    setLogoPressed(true);
+    logoTimer.current = setTimeout(() => {
+      setLogoPressed(false);
+      setShowIconCfg(true);
+    }, 1500);
+  };
+  const handleLogoRelease = () => {
+    clearTimeout(logoTimer.current);
+    setLogoPressed(false);
+  };
 
   return (
     <div style={{ height:"100dvh", display:"flex", flexDirection:"column", background:"linear-gradient(160deg,#e8f5ee 0%,#f0faf4 40%,#e4f2f8 100%)", fontFamily:"'Noto Sans SC','PingFang SC',sans-serif", width:"100%", overflow:"hidden", position:"relative" }}>
@@ -263,12 +405,36 @@ export default function App() {
         @keyframes slideUp{from{transform:translateY(100%);opacity:0}to{transform:translateY(0);opacity:1}}
         @keyframes popIn{0%{transform:translate(-50%,-50%) scale(0.8);opacity:0}60%{transform:translate(-50%,-50%) scale(1.05)}100%{transform:translate(-50%,-50%) scale(1);opacity:1}}
         @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-        @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(224,144,48,0.4)}70%{box-shadow:0 0 0 8px rgba(224,144,48,0)}}
+        @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(0.88)}}
       `}</style>
 
       {/* 顶部标题栏 */}
       <div style={{ padding:"48px 16px 12px", background:"linear-gradient(180deg,rgba(45,122,88,0.1) 0%,transparent 100%)", flexShrink:0 }}>
-        <h1 style={{ fontSize:22, fontWeight:700, color:"#1a3a2a", fontFamily:"'Noto Serif SC',serif" }}>{TITLE[tab]}</h1>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          {/* 左上角 Logo / 动图，长按进入图标配置 */}
+          <button
+            onMouseDown={handleLogoPress} onMouseUp={handleLogoRelease}
+            onTouchStart={handleLogoPress} onTouchEnd={handleLogoRelease}
+            style={{
+              width:56, height:56, borderRadius:16, overflow:"hidden",
+              border:"none", background:"rgba(45,122,88,0.08)", cursor:"pointer",
+              display:"flex", alignItems:"center", justifyContent:"center", padding:0, flexShrink:0,
+              transform: logoPressed ? "scale(0.88)" : "scale(1)",
+              transition:"transform 0.15s",
+              boxShadow: logoPressed ? "0 0 0 3px rgba(45,122,88,0.3)" : "0 2px 8px rgba(45,122,88,0.12)",
+            }}
+            title="长按1.5秒配置图标"
+          >
+            {logoUrl
+              ? <img src={logoUrl} alt="logo" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              : <span style={{ fontSize:30 }}>✦</span>
+            }
+          </button>
+
+          <h1 style={{ fontSize:22, fontWeight:700, color:"#1a3a2a", fontFamily:"'Noto Serif SC',serif", flex:1 }}>
+            {TITLE[tab]}
+          </h1>
+        </div>
       </div>
 
       {/* 页面内容 */}
@@ -281,18 +447,31 @@ export default function App() {
       </div>
 
       {/* 底部 Tab Bar */}
-      <div style={{ flexShrink:0, background:"rgba(255,255,255,0.85)", backdropFilter:"blur(16px)", borderTop:"1px solid rgba(45,122,88,0.1)", display:"flex", paddingBottom:"env(safe-area-inset-bottom, 8px)" }}>
+      <div style={{ flexShrink:0, background:"rgba(255,255,255,0.88)", backdropFilter:"blur(16px)", borderTop:"1px solid rgba(45,122,88,0.1)", display:"flex", paddingBottom:"env(safe-area-inset-bottom, 8px)", zIndex:50 }}>
         {TABS.map(t => {
           const active = tab === t.id;
           return (
-            <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1, padding:"10px 0 6px", border:"none", background:"transparent", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, transition:"all 0.2s" }}>
-              <span style={{ fontSize:22, lineHeight:1 }}>{t.icon}</span>
-              <span style={{ fontSize:11, fontWeight:active?600:400, color:active?"#2d7a58":"#aaa", transition:"color 0.2s" }}>{t.label}</span>
-              {active && <div style={{ width:20, height:2, borderRadius:1, background:"#2d7a58", marginTop:1 }} />}
+            <button key={t.id} onClick={()=>setTab(t.id)} style={{ flex:1, padding:"10px 0 6px", border:"none", background:"transparent", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, position:"relative" }}>
+              {/* 图标区域 36×36 */}
+              <div style={{ width:36, height:36, display:"flex", alignItems:"center", justifyContent:"center", filter: active ? "none" : "grayscale(30%) opacity(0.65)", transition:"filter 0.2s, transform 0.15s", transform: active ? "scale(1.08)" : "scale(1)" }}>
+                {configLoaded ? getTabIcon(t.id, t.defaultIcon) : <span style={{ fontSize:26 }}>{t.defaultIcon}</span>}
+              </div>
+              <span style={{ fontSize:11, fontWeight:active?700:400, color:active?"#2d7a58":"#aaa", transition:"color 0.2s", lineHeight:1 }}>{t.label}</span>
+              {active && <div style={{ position:"absolute", bottom:0, left:"50%", transform:"translateX(-50%)", width:24, height:3, borderRadius:2, background:"#2d7a58" }} />}
             </button>
           );
         })}
       </div>
+
+      {/* 图标配置弹窗 */}
+      {showIconCfg && (
+        <IconConfigModal
+          supabase={supabase}
+          configs={configs}
+          onSave={newCfg => setConfigs(c => ({ ...c, ...newCfg }))}
+          onClose={() => setShowIconCfg(false)}
+        />
+      )}
     </div>
   );
 }
