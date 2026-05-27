@@ -6,9 +6,8 @@ import HistoryPage from "./HistoryPage";
 import MenuManagePage from "./MenuManagePage";
 
 // ─── Supabase 初始化 ───────────────────────────────────────────
-const SUPABASE_URL  = "https://udawpaivdegqhlyvnffs.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkYXdwYWl2ZGVncWhseXZuZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDUxNTAsImV4cCI6MjA5NDA4MTE1MH0.2aPiAEdFq1S4NBQ-BUDjhGx4WpLzvvUMk_1e0njROWg";
-
+const SUPABASE_URL  = "https://your-project.supabase.co";
+const SUPABASE_ANON = "your-anon-key";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ─── 常量 ──────────────────────────────────────────────────────
