@@ -8,7 +8,6 @@ import MenuManagePage from "./MenuManagePage";
 const SUPABASE_URL  = "https://udawpaivdegqhlyvnffs.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkYXdwYWl2ZGVncWhseXZuZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDUxNTAsImV4cCI6MjA5NDA4MTE1MH0.2aPiAEdFq1S4NBQ-BUDjhGx4WpLzvvUMk_1e0njROWg";
 
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ─── 常量 ──────────────────────────────────────────────────────
@@ -62,7 +61,9 @@ function IconConfigModal({ supabase, configs, onSave, onClose }) {
 
   const iconItems = [
     ...TABS.map(t => ({ key: `icon_${t.id}`, label: `"${t.label}" 图标`, defaultEmoji: t.defaultIcon })),
-    { key: "icon_logo", label: "左上角 Logo", defaultEmoji: "✦" },
+    { key: "icon_logo",  label: "左上角 Logo（长按进入设置）", defaultEmoji: "✦" },
+    { key: "icon_right", label: "右上角装饰动图",              defaultEmoji: "🌿" },
+    { key: "icon_price", label: "价格图标（替换 ¥ 符号）",     defaultEmoji: "🪙" },
   ];
 
   return (
@@ -149,7 +150,7 @@ function Thumb({ item }) {
   return <div style={{ width:68, height:68, borderRadius:12, flexShrink:0, background:p.bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:24, fontWeight:700, color:p.fg, fontFamily:"'Noto Serif SC',serif" }}>{item.name.charAt(0)}</div>;
 }
 
-function ItemCard({ item, qty, onAdd, onSub }) {
+function ItemCard({ item, qty, onAdd, onSub, PriceIcon }) {
   return (
     <div style={{ display:"flex", gap:10, padding:"12px 0", borderBottom:"1px solid rgba(45,122,88,0.08)", opacity:item.is_available?1:0.5 }}>
       <div style={{ position:"relative", flexShrink:0 }}>
@@ -162,7 +163,9 @@ function ItemCard({ item, qty, onAdd, onSub }) {
           <div style={{ fontSize:11, color:"#7a9a85", marginTop:2, lineHeight:1.4, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.description}</div>
         </div>
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:6 }}>
-          <span style={{ fontSize:15, fontWeight:700, color:"#2d7a58" }}>¥{item.price}</span>
+          <span style={{ fontSize:15, fontWeight:700, color:"#2d7a58", display:"flex", alignItems:"center", gap:2 }}>
+            <PriceIcon size={14} />{item.price}
+          </span>
           {item.is_available && (
             qty === 0 ? (
               <button onClick={onAdd} style={{ width:28, height:28, borderRadius:"50%", border:"none", background:"#2d7a58", color:"#fff", fontSize:18, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:300, lineHeight:1, boxShadow:"0 2px 8px rgba(45,122,88,0.35)" }}>+</button>
@@ -180,7 +183,7 @@ function ItemCard({ item, qty, onAdd, onSub }) {
   );
 }
 
-function CartSheet({ cartItems, menuItems, onAdd, onSub, onClear, onOrder, onClose, totalPrice, ordering }) {
+function CartSheet({ cartItems, menuItems, onAdd, onSub, onClear, onOrder, onClose, totalPrice, ordering, PriceIcon }) {
   return (
     <div style={{ position:"fixed", inset:0, zIndex:300, display:"flex", flexDirection:"column", justifyContent:"flex-end" }}>
       <div onClick={onClose} style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.4)", backdropFilter:"blur(4px)" }} />
@@ -201,7 +204,9 @@ function CartSheet({ cartItems, menuItems, onAdd, onSub, onClear, onOrder, onClo
                   <div style={{ width:40, height:40, borderRadius:10, background:p.bg, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:700, color:p.fg, fontFamily:"'Noto Serif SC',serif", flexShrink:0 }}>{item.name.charAt(0)}</div>
                   <div style={{ flex:1 }}>
                     <div style={{ fontSize:13, fontWeight:600, color:"#1a3a2a" }}>{item.name}</div>
-                    <div style={{ fontSize:12, color:"#2d7a58", fontWeight:700 }}>¥{item.price}</div>
+                    <div style={{ fontSize:12, color:"#2d7a58", fontWeight:700, display:"flex", alignItems:"center", gap:1 }}>
+                      <PriceIcon size={12} />{item.price}
+                    </div>
                   </div>
                   <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                     <button onClick={()=>onSub(id)} style={{ width:26, height:26, borderRadius:"50%", border:"1.5px solid #2d7a58", background:"transparent", color:"#2d7a58", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", fontWeight:700 }}>−</button>
@@ -214,9 +219,11 @@ function CartSheet({ cartItems, menuItems, onAdd, onSub, onClear, onOrder, onClo
         </div>
         {cartItems.length > 0 && (
           <div style={{ padding:"14px 20px 32px", borderTop:"1px solid #f0f5f2" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", marginBottom:14 }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
               <span style={{ color:"#7a9a85", fontSize:14 }}>合计</span>
-              <span style={{ fontSize:20, fontWeight:700, color:"#1a3a2a" }}>¥{totalPrice}</span>
+              <span style={{ fontSize:20, fontWeight:700, color:"#1a3a2a", display:"flex", alignItems:"center", gap:3 }}>
+                <PriceIcon size={18} />{totalPrice}
+              </span>
             </div>
             <button onClick={onOrder} disabled={ordering} style={{ width:"100%", padding:15, background:ordering?"#aaa":"linear-gradient(135deg,#2d7a58,#3a9068)", color:"#fff", border:"none", borderRadius:16, fontSize:16, fontWeight:700, cursor:ordering?"not-allowed":"pointer", boxShadow:ordering?"none":"0 4px 20px rgba(45,122,88,0.4)", letterSpacing:"0.5px" }}>
               {ordering ? "下单中..." : "确认下单"}
@@ -229,7 +236,7 @@ function CartSheet({ cartItems, menuItems, onAdd, onSub, onClear, onOrder, onClo
 }
 
 // ─── 菜单页 ────────────────────────────────────────────────────
-function MenuPage({ supabase }) {
+function MenuPage({ supabase, PriceIcon }) {
   const [categories, setCategories] = useState([]);
   const [menuItems,  setMenuItems]  = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -306,10 +313,16 @@ function MenuPage({ supabase }) {
           {categories.map(cat => {
             const active = activeCat===cat.id;
             return (
-              <button key={cat.id} onClick={()=>handleCatClick(cat.id)} style={{ width:"100%", padding:"12px 4px", border:"none", cursor:"pointer", borderRadius:12, display:"flex", flexDirection:"column", alignItems:"center", gap:4, background:active?"rgba(45,122,88,0.12)":"transparent", position:"relative" }}>
+              <button key={cat.id} onClick={()=>handleCatClick(cat.id)} style={{ width:"100%", padding:"10px 4px", border:"none", cursor:"pointer", borderRadius:12, display:"flex", flexDirection:"column", alignItems:"center", gap:3, background:active?"rgba(45,122,88,0.12)":"transparent", position:"relative" }}>
                 {active && <div style={{ position:"absolute", left:0, top:"50%", transform:"translateY(-50%)", width:3, height:24, borderRadius:"0 3px 3px 0", background:"#2d7a58" }} />}
-                <span style={{ fontSize:16, color:active?"#2d7a58":"#7a9a85" }}>{cat.icon}</span>
-                <span style={{ fontSize:11, fontWeight:active?600:400, color:active?"#2d7a58":"#7a9a85", lineHeight:1.2 }}>{cat.name}</span>
+                {/* 图标：优先显示上传的图片，否则显示 emoji */}
+                <div style={{ width:36, height:36, borderRadius:10, overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", background: cat.icon_url ? "transparent" : (active?"rgba(45,122,88,0.1)":"rgba(0,0,0,0.03)"), transition:"all 0.2s" }}>
+                  {cat.icon_url
+                    ? <img src={cat.icon_url} alt={cat.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                    : <span style={{ fontSize:18, color:active?"#2d7a58":"#7a9a85" }}>{cat.icon}</span>
+                  }
+                </div>
+                <span style={{ fontSize:10, fontWeight:active?600:400, color:active?"#2d7a58":"#7a9a85", lineHeight:1.2, textAlign:"center", wordBreak:"keep-all" }}>{cat.name}</span>
               </button>
             );
           })}
@@ -322,7 +335,7 @@ function MenuPage({ supabase }) {
                 <span style={{ fontSize:11, color:"#aaa", fontWeight:400 }}>({menuItems.filter(m=>m.category_id===cat.id).length})</span>
               </div>
               {menuItems.filter(m=>m.category_id===cat.id).map(item=>(
-                <ItemCard key={item.id} item={item} qty={cart[item.id]||0} onAdd={()=>addToCart(item.id)} onSub={()=>subFromCart(item.id)} />
+                <ItemCard key={item.id} item={item} qty={cart[item.id]||0} onAdd={()=>addToCart(item.id)} onSub={()=>subFromCart(item.id)} PriceIcon={PriceIcon} />
               ))}
             </div>
           ))}
@@ -334,9 +347,9 @@ function MenuPage({ supabase }) {
         <span style={{ fontSize:26 }}>🛒</span>
         {totalQty>0 && <div style={{ position:"absolute", top:-2, right:-2, background:"#e05a3a", color:"#fff", borderRadius:"50%", minWidth:20, height:20, fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px", border:"2px solid #fff" }}>{totalQty>99?"99+":totalQty}</div>}
       </button>
-      {totalQty>0 && <div style={{ position:"fixed", bottom:78, right:88, background:"#1a3a2a", color:"#fff", borderRadius:20, padding:"6px 14px", fontSize:13, fontWeight:700, boxShadow:"0 4px 16px rgba(0,0,0,0.2)", zIndex:100, pointerEvents:"none" }}>¥{totalPrice}</div>}
+      {totalQty>0 && <div style={{ position:"fixed", bottom:78, right:88, background:"#1a3a2a", color:"#fff", borderRadius:20, padding:"6px 14px", fontSize:13, fontWeight:700, boxShadow:"0 4px 16px rgba(0,0,0,0.2)", zIndex:100, pointerEvents:"none", display:"flex", alignItems:"center", gap:2 }}><PriceIcon size={12} />{totalPrice}</div>}
 
-      {showCart && <CartSheet cartItems={cartItems} menuItems={menuItems} onAdd={addToCart} onSub={subFromCart} onClear={()=>setCart({})} onOrder={handleOrder} onClose={()=>setShowCart(false)} totalPrice={totalPrice} ordering={ordering} />}
+      {showCart && <CartSheet cartItems={cartItems} menuItems={menuItems} onAdd={addToCart} onSub={subFromCart} onClear={()=>setCart({})} onOrder={handleOrder} onClose={()=>setShowCart(false)} totalPrice={totalPrice} ordering={ordering} PriceIcon={PriceIcon} />}
 
       {toast && (
         <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", background:"#fff", borderRadius:20, padding:"28px 36px", textAlign:"center", boxShadow:"0 12px 48px rgba(0,0,0,0.15)", zIndex:400, minWidth:180, animation:"popIn 0.4s cubic-bezier(.22,.68,0,1.2) both" }}>
@@ -380,7 +393,15 @@ export default function App() {
     return <span style={{ fontSize:22, lineHeight:1 }}>{defaultEmoji}</span>;
   };
 
-  const logoUrl = configs["icon_logo"];
+  // 价格图标：替换 ¥，有图片就显示图片，否则显示 ¥
+  const PriceIcon = ({ size = 15 }) => {
+    const url = configs["icon_price"];
+    if (url) return <img src={url} alt="price" style={{ width: size, height: size, objectFit:"contain", verticalAlign:"middle", marginRight:1 }} />;
+    return <span style={{ fontSize: size }}>¥</span>;
+  };
+
+  const logoUrl  = configs["icon_logo"];
+  const rightUrl = configs["icon_right"];
 
   // 长按 Logo → 打开图标配置
   const handleLogoPress = () => {
@@ -411,7 +432,7 @@ export default function App() {
       {/* 顶部标题栏 */}
       <div style={{ padding:"48px 16px 12px", background:"linear-gradient(180deg,rgba(45,122,88,0.1) 0%,transparent 100%)", flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {/* 左上角 Logo / 动图，长按进入图标配置 */}
+          {/* 左上角 Logo，长按进入图标配置 */}
           <button
             onMouseDown={handleLogoPress} onMouseUp={handleLogoRelease}
             onTouchStart={handleLogoPress} onTouchEnd={handleLogoRelease}
@@ -431,15 +452,24 @@ export default function App() {
             }
           </button>
 
+          {/* 标题 */}
           <h1 style={{ fontSize:22, fontWeight:700, color:"#1a3a2a", fontFamily:"'Noto Serif SC',serif", flex:1 }}>
             {TITLE[tab]}
           </h1>
+
+          {/* 右上角装饰动图 */}
+          <div style={{ width:56, height:56, borderRadius:16, overflow:"hidden", flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", background: rightUrl ? "transparent" : "rgba(45,122,88,0.06)", boxShadow: rightUrl ? "0 2px 8px rgba(45,122,88,0.12)" : "none" }}>
+            {rightUrl
+              ? <img src={rightUrl} alt="deco" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+              : <span style={{ fontSize:28 }}>🌿</span>
+            }
+          </div>
         </div>
       </div>
 
       {/* 页面内容 */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-        {tab === "menu"     && <MenuPage       supabase={supabase} />}
+        {tab === "menu"     && <MenuPage       supabase={supabase} PriceIcon={PriceIcon} />}
         {tab === "admin"    && <AdminPage      supabase={supabase} />}
         {tab === "history"  && <HistoryPage    supabase={supabase} />}
         {tab === "manage"   && <MenuManagePage supabase={supabase} />}

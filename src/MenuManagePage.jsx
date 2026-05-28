@@ -218,16 +218,19 @@ function ItemFormModal({ supabase, item, categories, onSave, onClose }) {
 
 // ─── 分类管理弹窗 ──────────────────────────────────────────────
 function CategoryModal({ supabase, categories, onSave, onClose }) {
-  const [list,    setList]    = useState(categories.map(c => ({ ...c })));
-  const [saving,  setSaving]  = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newIcon, setNewIcon] = useState("◈");
+  const [list,      setList]      = useState(categories.map(c => ({ ...c })));
+  const [newName,   setNewName]   = useState("");
+  const [newIcon,   setNewIcon]   = useState("◈");
+  const [uploading, setUploading] = useState(null); // cat id
+  const fileRefs = useRef({});
 
   const ICONS = ["◈","◉","◎","◆","◇","✦","★","♥","▲","●"];
 
   const addCat = async () => {
     if (!newName.trim()) return;
-    const { data, error } = await supabase.from("categories").insert({ name: newName.trim(), icon: newIcon, sort_order: list.length + 1 }).select().single();
+    const { data, error } = await supabase.from("categories")
+      .insert({ name: newName.trim(), icon: newIcon, sort_order: list.length + 1 })
+      .select().single();
     if (!error && data) { setList(l => [...l, data]); setNewName(""); }
   };
 
@@ -243,15 +246,39 @@ function CategoryModal({ supabase, categories, onSave, onClose }) {
     setList(l => l.filter(c => c.id !== id));
   };
 
+  // 上传分类图标
+  const handleIconUpload = async (cat, file) => {
+    if (!file) return;
+    setUploading(cat.id);
+    try {
+      const ext  = file.name.split(".").pop();
+      const path = `icons/cat_${cat.id}_${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: true, contentType: file.type });
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      await supabase.from("categories").update({ icon_url: data.publicUrl }).eq("id", cat.id);
+      setList(l => l.map(c => c.id === cat.id ? { ...c, icon_url: data.publicUrl } : c));
+    } catch { alert("上传失败"); }
+    finally { setUploading(null); }
+  };
+
+  const clearIconUrl = async (cat) => {
+    await supabase.from("categories").update({ icon_url: "" }).eq("id", cat.id);
+    setList(l => l.map(c => c.id === cat.id ? { ...c, icon_url: "" } : c));
+  };
+
   return (
     <div style={{ position:"fixed", inset:0, zIndex:400, display:"flex", alignItems:"flex-end" }}>
       <div onClick={onClose} style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.45)", backdropFilter:"blur(4px)" }} />
-      <div style={{ position:"relative", width:"100%", background:"#f4faf7", borderRadius:"24px 24px 0 0", maxHeight:"80vh", display:"flex", flexDirection:"column", animation:"slideUp 0.3s cubic-bezier(.22,.68,0,1.2)" }}>
+      <div style={{ position:"relative", width:"100%", background:"#f4faf7", borderRadius:"24px 24px 0 0", maxHeight:"82vh", display:"flex", flexDirection:"column", animation:"slideUp 0.3s cubic-bezier(.22,.68,0,1.2)" }}>
         <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 0" }}>
           <div style={{ width:36, height:4, borderRadius:2, background:"#c8e0d4" }} />
         </div>
         <div style={{ padding:"12px 20px 0", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
-          <span style={{ fontSize:16, fontWeight:700, color:"#1a3a2a" }}>管理分类</span>
+          <div>
+            <div style={{ fontSize:16, fontWeight:700, color:"#1a3a2a" }}>管理分类</div>
+            <div style={{ fontSize:11, color:"#7a9a85", marginTop:2 }}>点击图标区域可上传自定义图片/动图</div>
+          </div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#aaa", fontSize:20, cursor:"pointer" }}>×</button>
         </div>
 
@@ -266,19 +293,58 @@ function CategoryModal({ supabase, categories, onSave, onClose }) {
           </div>
 
           {/* 分类列表 */}
-          {list.map(cat => (
-            <div key={cat.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"11px 14px", background:"rgba(255,255,255,0.8)", borderRadius:12, marginBottom:8, border:"1px solid rgba(255,255,255,0.9)" }}>
-              <span style={{ fontSize:18, width:24, textAlign:"center" }}>{cat.icon}</span>
-              <span style={{ flex:1, fontSize:14, fontWeight:500, color: cat.is_active ? "#1a3a2a" : "#aaa" }}>{cat.name}</span>
-              <button onClick={() => toggleActive(cat)} style={{ fontSize:11, padding:"3px 10px", borderRadius:20, border:"none", cursor:"pointer", background: cat.is_active ? "#e8f5ee" : "#f0f0f0", color: cat.is_active ? "#2d7a58" : "#aaa", fontWeight:600 }}>
-                {cat.is_active ? "显示中" : "已隐藏"}
-              </button>
-              <button onClick={() => deleteCat(cat.id)} style={{ width:28, height:28, borderRadius:"50%", border:"none", background:"transparent", color:"#ddd", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center" }}
-                onMouseEnter={e => e.currentTarget.style.color="#e05a3a"}
-                onMouseLeave={e => e.currentTarget.style.color="#ddd"}
-              >✕</button>
-            </div>
-          ))}
+          {list.map(cat => {
+            const busy = uploading === cat.id;
+            return (
+              <div key={cat.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px", background:"rgba(255,255,255,0.8)", borderRadius:14, marginBottom:8, border:"1px solid rgba(255,255,255,0.9)" }}>
+
+                {/* 图标（可点击上传） */}
+                <div style={{ position:"relative", flexShrink:0 }}>
+                  <div
+                    onClick={() => fileRefs.current[cat.id]?.click()}
+                    style={{ width:44, height:44, borderRadius:12, overflow:"hidden", background:"rgba(45,122,88,0.08)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:"1.5px dashed rgba(45,122,88,0.25)", position:"relative" }}
+                  >
+                    {busy
+                      ? <div style={{ width:18, height:18, border:"2px solid rgba(45,122,88,0.2)", borderTopColor:"#2d7a58", borderRadius:"50%", animation:"spin 0.7s linear infinite" }} />
+                      : cat.icon_url
+                        ? <img src={cat.icon_url} alt={cat.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                        : <span style={{ fontSize:20 }}>{cat.icon}</span>
+                    }
+                    {/* 上传提示遮罩 */}
+                    <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0)", display:"flex", alignItems:"center", justifyContent:"center", borderRadius:10, transition:"background 0.2s" }}
+                      onMouseEnter={e => e.currentTarget.style.background="rgba(0,0,0,0.15)"}
+                      onMouseLeave={e => e.currentTarget.style.background="rgba(0,0,0,0)"}
+                    >
+                      <span style={{ fontSize:10, color:"#fff", fontWeight:700, opacity:0, transition:"opacity 0.2s" }}
+                        onMouseEnter={e => e.currentTarget.style.opacity="1"}
+                        onMouseLeave={e => e.currentTarget.style.opacity="0"}
+                      >上传</span>
+                    </div>
+                  </div>
+                  {/* 清除小按钮 */}
+                  {cat.icon_url && (
+                    <button onClick={() => clearIconUrl(cat)} style={{ position:"absolute", top:-5, right:-5, width:16, height:16, borderRadius:"50%", background:"#e05a3a", border:"1.5px solid #fff", color:"#fff", fontSize:9, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, lineHeight:1 }}>✕</button>
+                  )}
+                  <input
+                    ref={el => fileRefs.current[cat.id] = el}
+                    type="file" accept="image/*,.gif"
+                    onChange={e => handleIconUpload(cat, e.target.files?.[0])}
+                    style={{ display:"none" }}
+                  />
+                </div>
+
+                <span style={{ flex:1, fontSize:14, fontWeight:500, color: cat.is_active ? "#1a3a2a" : "#aaa" }}>{cat.name}</span>
+
+                <button onClick={() => toggleActive(cat)} style={{ fontSize:11, padding:"4px 10px", borderRadius:20, border:"none", cursor:"pointer", background: cat.is_active ? "#e8f5ee" : "#f0f0f0", color: cat.is_active ? "#2d7a58" : "#aaa", fontWeight:600, flexShrink:0 }}>
+                  {cat.is_active ? "显示中" : "已隐藏"}
+                </button>
+                <button onClick={() => deleteCat(cat.id)} style={{ width:28, height:28, borderRadius:"50%", border:"none", background:"transparent", color:"#ddd", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}
+                  onMouseEnter={e => e.currentTarget.style.color="#e05a3a"}
+                  onMouseLeave={e => e.currentTarget.style.color="#ddd"}
+                >✕</button>
+              </div>
+            );
+          })}
         </div>
 
         <div style={{ padding:"12px 20px 32px", flexShrink:0 }}>
