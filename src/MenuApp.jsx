@@ -8,7 +8,7 @@ import AuthPage from "./AuthPage";
 
 const SUPABASE_URL  = "https://udawpaivdegqhlyvnffs.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkYXdwYWl2ZGVncWhseXZuZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDUxNTAsImV4cCI6MjA5NDA4MTE1MH0.2aPiAEdFq1S4NBQ-BUDjhGx4WpLzvvUMk_1e0njROWg";
-const DEV_MODE = true;
+const DEV_MODE = false;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
@@ -375,7 +375,7 @@ export default function App() {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const logoTimer = useRef(null);
-  const TITLE = { menu:"今日菜单 ✦", admin:"订单管理", history:"历史订单", manage:"菜单管理", shopping:"采购备忘" };
+  const TITLE = { menu:"小胖菜单 ✦", admin:"订单管理", history:"历史订单", manage:"菜单管理", shopping:"采购备忘" };
 
   // ── 监听登录状态 ──
   useEffect(() => {
