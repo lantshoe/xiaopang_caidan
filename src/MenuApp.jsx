@@ -4,6 +4,7 @@ import AdminPage from "./AdminPage";
 import ShoppingPage from "./ShoppingPage";
 import HistoryPage from "./HistoryPage";
 import MenuManagePage from "./MenuManagePage";
+import AuthPage from "./AuthPage";
 
 const SUPABASE_URL  = "https://udawpaivdegqhlyvnffs.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkYXdwYWl2ZGVncWhseXZuZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDUxNTAsImV4cCI6MjA5NDA4MTE1MH0.2aPiAEdFq1S4NBQ-BUDjhGx4WpLzvvUMk_1e0njROWg";
@@ -369,11 +370,30 @@ export default function App() {
   const [configLoaded, setConfigLoaded] = useState(false);
   const [showIconCfg,  setShowIconCfg]  = useState(false);
   const [logoPressed,  setLogoPressed]  = useState(false);
+  const [session,      setSession]      = useState(undefined); // undefined=加载中, null=未登录, obj=已登录
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // 长按 Logo 3 秒打开图标配置
   const logoTimer = useRef(null);
-
   const TITLE = { menu:"今日菜单 ✦", admin:"订单管理", history:"历史订单", manage:"菜单管理", shopping:"采购备忘" };
+
+  // ── 监听登录状态 ──
+  useEffect(() => {
+    // 获取当前 session
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session ?? null);
+    });
+    // 监听后续变化（登录/退出）
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── 退出登录 ──
+  const handleSignOut = async () => {
+    setShowUserMenu(false);
+    await supabase.auth.signOut();
+  };
 
   // ── 加载配置 ──
   const loadConfigs = useCallback(async () => {
@@ -384,7 +404,66 @@ export default function App() {
     setConfigLoaded(true);
   }, []);
 
-  useEffect(() => { loadConfigs(); }, [loadConfigs]);
+  // ── 白名单检查 ──
+  const [allowed, setAllowed] = useState(undefined); // undefined=检查中, true/false
+
+  useEffect(() => {
+    if (!session) return;
+    const email = session.user.email;
+    supabase
+      .from("allowed_users")
+      .select("email")
+      .eq("email", email)
+      .maybeSingle()
+      .then(({ data }) => {
+        setAllowed(!!data);
+        if (data) loadConfigs(); // 在白名单里才加载配置
+      });
+  }, [session, loadConfigs]);
+
+  // ── 加载中（session 还未确认）──
+  if (session === undefined) return (
+    <div style={{ height:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", background:"linear-gradient(160deg,#e8f5ee,#e4f2f8)" }}>
+      <div style={{ width:36, height:36, border:"3px solid rgba(45,122,88,0.2)", borderTopColor:"#2d7a58", borderRadius:"50%", animation:"spin 0.7s linear infinite" }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  // ── 未登录 → 登录页 ──
+  if (!session) return <AuthPage supabase={supabase} />;
+
+  // ── 已登录但白名单检查中 ──
+  if (allowed === undefined) return (
+    <div style={{ height:"100dvh", display:"flex", alignItems:"center", justifyContent:"center", background:"linear-gradient(160deg,#e8f5ee,#e4f2f8)" }}>
+      <div style={{ width:36, height:36, border:"3px solid rgba(45,122,88,0.2)", borderTopColor:"#2d7a58", borderRadius:"50%", animation:"spin 0.7s linear infinite" }} />
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  // ── 不在白名单 → 无权限页 ──
+  if (!allowed) return (
+    <div style={{ height:"100dvh", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", background:"linear-gradient(160deg,#e8f5ee,#e4f2f8)", fontFamily:"'Noto Sans SC',sans-serif", padding:"0 32px", textAlign:"center" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600;700&family=Noto+Serif+SC:wght@700&display=swap');*{box-sizing:border-box;margin:0;padding:0;}`}</style>
+      <div style={{ fontSize:56, marginBottom:20 }}>🚫</div>
+      <h2 style={{ fontSize:22, fontWeight:700, color:"#1a3a2a", fontFamily:"'Noto Serif SC',serif", marginBottom:10 }}>暂无访问权限</h2>
+      <p style={{ fontSize:14, color:"#7a9a85", lineHeight:1.8, marginBottom:8 }}>
+        你的账号 <strong style={{ color:"#2d7a58" }}>{session.user.email}</strong><br />
+        尚未被添加到系统白名单
+      </p>
+      <p style={{ fontSize:13, color:"#aaa", marginBottom:32 }}>请联系管理员将你的邮箱加入白名单</p>
+      <button
+        onClick={() => supabase.auth.signOut()}
+        style={{ padding:"10px 28px", background:"transparent", border:"1.5px solid rgba(45,122,88,0.3)", borderRadius:20, fontSize:13, color:"#2d7a58", cursor:"pointer", fontWeight:600 }}
+      >
+        切换账号
+      </button>
+    </div>
+  );
+
+  // ── 在白名单 → 正常 App ──
+  const user = session.user;
+  const userAvatar = user.user_metadata?.avatar_url;
+  const userName   = user.user_metadata?.full_name ?? user.email;
 
   // 获取图标：有自定义图片就用图片，否则用默认 emoji
   const getTabIcon = (tabId, defaultEmoji) => {
@@ -464,6 +543,22 @@ export default function App() {
               : <span style={{ fontSize:28 }}>🌿</span>
             }
           </div>
+        </div>
+
+        {/* 用户信息栏 */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:10, padding:"7px 12px", background:"rgba(255,255,255,0.5)", borderRadius:12, backdropFilter:"blur(8px)", border:"1px solid rgba(255,255,255,0.8)" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            {userAvatar
+              ? <img src={userAvatar} alt="avatar" style={{ width:26, height:26, borderRadius:"50%", border:"2px solid rgba(45,122,88,0.2)" }} />
+              : <div style={{ width:26, height:26, borderRadius:"50%", background:"linear-gradient(135deg,#2d7a58,#5db88a)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, color:"#fff", fontWeight:700 }}>
+                  {userName?.charAt(0)?.toUpperCase()}
+                </div>
+            }
+            <span style={{ fontSize:12, color:"#3a5a46", fontWeight:500 }}>{userName}</span>
+          </div>
+          <button onClick={handleSignOut} style={{ fontSize:11, color:"#7a9a85", background:"none", border:"1px solid rgba(45,122,88,0.2)", borderRadius:8, padding:"3px 10px", cursor:"pointer" }}>
+            退出
+          </button>
         </div>
       </div>
 
