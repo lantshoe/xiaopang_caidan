@@ -8,6 +8,7 @@ import AuthPage from "./AuthPage";
 
 const SUPABASE_URL  = "https://udawpaivdegqhlyvnffs.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkYXdwYWl2ZGVncWhseXZuZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDUxNTAsImV4cCI6MjA5NDA4MTE1MH0.2aPiAEdFq1S4NBQ-BUDjhGx4WpLzvvUMk_1e0njROWg";
+const DEV_MODE = false;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
@@ -378,6 +379,10 @@ export default function App() {
 
   // ── 监听登录状态 ──
   useEffect(() => {
+    if (DEV_MODE) {
+      setSession({ user: { email: "dev@local", user_metadata: { full_name: "开发模式" } } });
+      return;
+    }
     // 获取当前 session
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session ?? null);
@@ -409,6 +414,8 @@ export default function App() {
 
   useEffect(() => {
     if (!session) return;
+    if (DEV_MODE) { setAllowed(true); loadConfigs(); return; }
+
     const email = session.user.email;
     supabase
       .from("allowed_users")
