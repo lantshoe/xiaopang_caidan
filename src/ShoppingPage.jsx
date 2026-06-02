@@ -37,6 +37,14 @@ function getMonthLabel(key) {
   return `${y}年${parseInt(m)}月`;
 }
 
+// ─── 解析便签文本为条目数组 ────────────────────────────────────
+function parseItems(content) {
+  return content
+    .split(/[、，,\n]+/)
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
 // ─── 确认对话框 ───────────────────────────────────────────────
 function ConfirmDialog({ message, onConfirm, onCancel }) {
   return (
@@ -63,16 +71,13 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
   );
 }
 
-// ─── 底部弹窗添加便签（替换原来的 StickyInput） ───────────────
+// ─── 底部弹窗添加便签 ─────────────────────────────────────────
 function AddSheet({ onAdd, onClose }) {
   const [text,  setText]  = useState("");
   const [color, setColor] = useState(0);
   const textRef = useRef(null);
 
-  useEffect(() => {
-    // 弹出后自动聚焦
-    setTimeout(() => textRef.current?.focus(), 100);
-  }, []);
+  useEffect(() => { setTimeout(() => textRef.current?.focus(), 100); }, []);
 
   const handleAdd = () => {
     const t = text.trim();
@@ -89,83 +94,53 @@ function AddSheet({ onAdd, onClose }) {
   const c = NOTE_COLORS[color];
 
   return (
-    // 遮罩层
     <div style={{
-      position:"fixed", inset:0, zIndex:500,
-      display:"flex", alignItems:"flex-end",
+      position:"fixed", inset:0, zIndex:500, display:"flex", alignItems:"flex-end",
     }} onClick={onClose}>
-      {/* 半透明背景 */}
       <div style={{
-        position:"absolute", inset:0,
-        background:"rgba(0,0,0,0.4)",
-        backdropFilter:"blur(3px)",
+        position:"absolute", inset:0, background:"rgba(0,0,0,0.4)", backdropFilter:"blur(3px)",
       }} />
-
-      {/* Sheet 主体 */}
       <div style={{
-        position:"relative", width:"100%",
-        background:"#f4faf7",
-        borderRadius:"20px 20px 0 0",
-        padding:"16px 16px 40px",
-        animation:"slideUp 0.3s cubic-bezier(.22,.68,0,1.2) both",
-        zIndex:1,
+        position:"relative", width:"100%", background:"#f4faf7",
+        borderRadius:"20px 20px 0 0", padding:"16px 16px 40px",
+        animation:"slideUp 0.3s cubic-bezier(.22,.68,0,1.2) both", zIndex:1,
       }} onClick={e => e.stopPropagation()}>
-        {/* 拖拽把手 */}
-        <div style={{
-          width:36, height:4, borderRadius:2,
-          background:"rgba(45,122,88,0.2)",
-          margin:"0 auto 16px",
-        }} />
-
+        <div style={{ width:36, height:4, borderRadius:2, background:"rgba(45,122,88,0.2)", margin:"0 auto 16px" }} />
         <div style={{ fontSize:14, fontWeight:700, color:"#1a3a2a", marginBottom:12 }}>新建采购便签</div>
-
-        {/* 便签预览输入区 */}
         <div style={{
-          background: c.bg,
-          border: `1px solid ${c.border}`,
-          borderRadius: "2px 16px 16px 16px",
-          padding: "14px 14px 12px",
-          position: "relative",
-          marginBottom: 12,
-          transition: "background 0.3s, border 0.3s",
+          background:c.bg, border:`1px solid ${c.border}`,
+          borderRadius:"2px 16px 16px 16px", padding:"14px 14px 12px",
+          position:"relative", marginBottom:12, transition:"background 0.3s, border 0.3s",
         }}>
-          {/* 折角 */}
           <div style={{
-            position:"absolute", top:0, left:0, width:0, height:0,
-            borderStyle:"solid", borderWidth:"16px 16px 0 0",
-            borderColor: `${c.border} transparent transparent transparent`,
+            position:"absolute", top:0, left:0, width:0, height:0, borderStyle:"solid",
+            borderWidth:"16px 16px 0 0", borderColor:`${c.border} transparent transparent transparent`,
           }} />
-          {/* 线条背景 */}
           <div style={{
             position:"absolute", inset:0, borderRadius:"inherit", overflow:"hidden", pointerEvents:"none",
-            backgroundImage: `repeating-linear-gradient(transparent, transparent 27px, ${c.line}40 27px, ${c.line}40 28px)`,
-            backgroundPositionY: "36px",
+            backgroundImage:`repeating-linear-gradient(transparent, transparent 27px, ${c.line}40 27px, ${c.line}40 28px)`,
+            backgroundPositionY:"36px",
           }} />
           <textarea
-            ref={textRef}
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onKeyDown={handleKey}
-            placeholder={"写下要买的东西…\n例如：五花肉 2斤、西兰花 3颗"}
-            rows={3}
+            ref={textRef} value={text}
+            onChange={e => setText(e.target.value)} onKeyDown={handleKey}
+            placeholder={"写下要买的东西…\n多样东西用顿号或换行分隔\n例如：五花肉 2斤、西兰花 3颗"}
+            rows={4}
             style={{
               width:"100%", background:"transparent", border:"none", outline:"none", resize:"none",
               fontSize:15, lineHeight:"28px", color:"#2a2a2a",
               fontFamily:"'Ma Shan Zheng','ZCOOL KuaiLe','Noto Sans SC',cursive",
-              paddingTop:4, paddingLeft:4, position:"relative", zIndex:1,
-              letterSpacing:"0.3px",
+              paddingTop:4, paddingLeft:4, position:"relative", zIndex:1, letterSpacing:"0.3px",
             }}
           />
         </div>
-
-        {/* 颜色选择 + 按钮 */}
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ display:"flex", gap:6 }}>
             {NOTE_COLORS.map((nc, i) => (
               <button key={i} onClick={() => setColor(i)} style={{
                 width:20, height:20, borderRadius:"50%",
                 border: i===color ? "2px solid #333" : "2px solid transparent",
-                background: nc.bg, cursor:"pointer", outline:"none",
+                background:nc.bg, cursor:"pointer", outline:"none",
                 boxShadow: i===color ? "0 0 0 1px rgba(0,0,0,0.3)" : "none",
                 transform: i===color ? "scale(1.2)" : "scale(1)",
                 transition:"transform 0.15s", padding:0,
@@ -181,8 +156,7 @@ function AddSheet({ onAdd, onClose }) {
             padding:"8px 20px", borderRadius:20,
             background: text.trim() ? "#2d7a58" : "#ccc",
             color:"#fff", border:"none", fontSize:13, fontWeight:700,
-            cursor: text.trim() ? "pointer" : "not-allowed",
-            transition:"all 0.2s",
+            cursor: text.trim() ? "pointer" : "not-allowed", transition:"all 0.2s",
           }}>贴上去 ✦</button>
         </div>
       </div>
@@ -205,29 +179,22 @@ function AmountBubble({ color, onSave, onSkip }) {
 
   return (
     <div style={{
-      marginTop:8, background:"rgba(255,255,255,0.85)", backdropFilter:"blur(8px)",
+      marginTop:10, background:"rgba(255,255,255,0.9)", backdropFilter:"blur(8px)",
       borderRadius:12, padding:"10px 12px", border:`1px solid ${color.border}`,
       animation:"noteIn 0.2s cubic-bezier(.22,.68,0,1.2) both",
     }}>
       <div style={{ fontSize:11, color:"#7a9a85", marginBottom:6 }}>💰 买了多少钱？（可跳过）</div>
       <div style={{ display:"flex", gap:8, alignItems:"center" }}>
         <div style={{
-          display:"flex", alignItems:"center", gap:4,
-          background:"rgba(255,255,255,0.9)", borderRadius:8,
-          padding:"5px 10px", border:"1px solid rgba(0,0,0,0.1)", flex:1,
+          display:"flex", alignItems:"center", gap:4, background:"rgba(255,255,255,0.9)",
+          borderRadius:8, padding:"5px 10px", border:"1px solid rgba(0,0,0,0.1)", flex:1,
         }}>
           <span style={{ fontSize:13, color:"#888" }}>¥</span>
           <input
-            ref={inputRef}
-            type="number"
-            value={val}
-            onChange={e => setVal(e.target.value)}
-            onKeyDown={handleKey}
+            ref={inputRef} type="number" value={val}
+            onChange={e => setVal(e.target.value)} onKeyDown={handleKey}
             placeholder="输入金额"
-            style={{
-              background:"transparent", border:"none", outline:"none",
-              fontSize:14, color:"#333", width:"100%", fontFamily:"inherit",
-            }}
+            style={{ background:"transparent", border:"none", outline:"none", fontSize:14, color:"#333", width:"100%", fontFamily:"inherit" }}
           />
         </div>
         <button onClick={onSkip} style={{
@@ -246,16 +213,47 @@ function AmountBubble({ color, onSave, onSkip }) {
 // ─── 单张便签 ──────────────────────────────────────────────────
 function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
   const c = NOTE_COLORS[item.color_idx ?? 0];
-  const [pressing, setPressing] = useState(false);
+  const subItems = parseItems(item.content);
+  const isMulti  = subItems.length > 1;
+
+  // 各子条目的勾选状态（纯本地，刷新重置；整张完成后不再需要）
+  const [checked, setChecked] = useState(() => new Array(subItems.length).fill(false));
   const [showAmountBubble, setShowAmountBubble] = useState(false);
 
-  const handleCheckClick = () => {
-    if (item.is_done) {
-      onToggleBack(item);
+  // 删除二步确认：第一次点亮红色，3秒内再点才真删，否则自动复原
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteTimerRef = useRef(null);
+
+  const handleDeleteClick = (e) => {
+    e.stopPropagation();
+    if (confirmDelete) {
+      clearTimeout(deleteTimerRef.current);
+      onDelete(item.id);
     } else {
-      setShowAmountBubble(true);
+      setConfirmDelete(true);
+      deleteTimerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
     }
   };
+
+  // 组件卸载时清理定时器
+  useEffect(() => () => clearTimeout(deleteTimerRef.current), []);
+
+  const toggleSub = (i) => {
+    if (item.is_done) return;
+    const next = [...checked];
+    next[i] = !next[i];
+    setChecked(next);
+    // 全部子条目勾完 → 自动弹金额气泡
+    if (next.every(Boolean)) setShowAmountBubble(true);
+  };
+
+  // 单条便签：点整张卡片完成
+  const handleSingleCheck = () => {
+    if (!item.is_done) setShowAmountBubble(true);
+  };
+
+  const doneCount  = checked.filter(Boolean).length;
+  const allChecked = isMulti && doneCount === subItems.length;
 
   return (
     <div style={{
@@ -268,42 +266,98 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
         : `2px 4px 12px ${c.shadow}, 0 1px 3px rgba(0,0,0,0.07)`,
       position:"relative", overflow:"hidden",
       transition:"all 0.35s ease",
-      transform: pressing ? "scale(0.98)" : "scale(1)",
       opacity: item.is_done ? 0.65 : 1,
       animation: "noteIn 0.3s cubic-bezier(.22,.68,0,1.2) both",
+      // 单条时整张可点
+      cursor: (!isMulti && !item.is_done) ? "pointer" : "default",
     }}
-      onMouseDown={() => setPressing(true)}
-      onMouseUp={() => setPressing(false)}
-      onMouseLeave={() => setPressing(false)}
+      onClick={!isMulti ? handleSingleCheck : undefined}
     >
       {/* 折角 */}
       <div style={{
-        position:"absolute", top:0, left:0, width:0, height:0,
-        borderStyle:"solid", borderWidth:"14px 14px 0 0",
-        borderColor: `${item.is_done ? "#e0e0d8" : c.border} transparent transparent transparent`,
+        position:"absolute", top:0, left:0, width:0, height:0, borderStyle:"solid",
+        borderWidth:"14px 14px 0 0",
+        borderColor:`${item.is_done ? "#e0e0d8" : c.border} transparent transparent transparent`,
       }} />
 
-      {/* 线条背景 */}
+      {/* 线条背景（未完成时显示） */}
       {!item.is_done && (
         <div style={{
           position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden",
-          backgroundImage: `repeating-linear-gradient(transparent, transparent 27px, ${c.line}35 27px, ${c.line}35 28px)`,
+          backgroundImage:`repeating-linear-gradient(transparent, transparent 27px, ${c.line}35 27px, ${c.line}35 28px)`,
           backgroundPositionY:"36px",
         }} />
       )}
 
       <div style={{ position:"relative", zIndex:1 }}>
-        <p style={{
-          fontSize:14, lineHeight:"26px", color: item.is_done ? "#999" : "#2a2a2a",
-          fontFamily:"'Ma Shan Zheng','ZCOOL KuaiLe','Noto Sans SC',cursive",
-          textDecoration: item.is_done ? "line-through" : "none",
-          textDecorationColor:"#aaa", margin:0, paddingLeft:4,
-          whiteSpace:"pre-wrap", wordBreak:"break-all", letterSpacing:"0.3px",
-        }}>{item.content}</p>
 
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:8 }}>
+        {/* ── 多条目：逐行展示 ── */}
+        {isMulti ? (
+          <div style={{ marginBottom:8 }}>
+            {subItems.map((line, i) => {
+              const isDone = item.is_done || checked[i];
+              return (
+                <div
+                  key={i}
+                  onClick={() => toggleSub(i)}
+                  style={{
+                    display:"flex", alignItems:"center", gap:10,
+                    padding:"6px 0",
+                    borderBottom: i < subItems.length-1 ? `1px dashed ${c.line}50` : "none",
+                    cursor: item.is_done ? "default" : "pointer",
+                    WebkitTapHighlightColor:"transparent",
+                  }}
+                >
+                  {/* 勾选圆圈（已完成整张时隐藏） */}
+                  {!item.is_done && (
+                    <div style={{
+                      width:20, height:20, borderRadius:"50%", flexShrink:0,
+                      border:`1.5px solid ${checked[i] ? "#2d7a58" : c.line}`,
+                      background: checked[i] ? "#2d7a58" : "rgba(255,255,255,0.55)",
+                      display:"flex", alignItems:"center", justifyContent:"center",
+                      fontSize:11, color:"#fff", transition:"all 0.2s",
+                    }}>
+                      {checked[i] && "✓"}
+                    </div>
+                  )}
+                  <span style={{
+                    fontSize:14, lineHeight:1.65, flex:1,
+                    fontFamily:"'Ma Shan Zheng','ZCOOL KuaiLe','Noto Sans SC',cursive",
+                    letterSpacing:"0.3px",
+                    color: isDone ? "#bbb" : "#2a2a2a",
+                    textDecoration: isDone ? "line-through" : "none",
+                    textDecorationColor:"#aaa",
+                    transition:"all 0.25s",
+                  }}>{line}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* ── 单条目：整张样式 ── */
+          <p style={{
+            fontSize:14, lineHeight:"26px",
+            color: item.is_done ? "#999" : "#2a2a2a",
+            fontFamily:"'Ma Shan Zheng','ZCOOL KuaiLe','Noto Sans SC',cursive",
+            textDecoration: item.is_done ? "line-through" : "none",
+            textDecorationColor:"#aaa", margin:0, paddingLeft:4,
+            whiteSpace:"pre-wrap", wordBreak:"break-all", letterSpacing:"0.3px",
+          }}>{item.content}</p>
+        )}
+
+        {/* ── 底部 meta 行 ── */}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:6 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <span style={{ fontSize:10, color:"#bbb" }}>{formatDate(item.created_at)}</span>
+
+            {/* 多条进度提示（未完成时） */}
+            {isMulti && !item.is_done && doneCount > 0 && !allChecked && (
+              <span style={{ fontSize:11, color:c.line, fontWeight:600 }}>
+                {doneCount}/{subItems.length} 已买
+              </span>
+            )}
+
+            {/* 金额标签 */}
             {item.amount > 0 && (
               <span style={{
                 fontSize:12, fontWeight:700,
@@ -316,35 +370,48 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
           </div>
 
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+            {/* 已完成整张：只显示"撤回"文字链接 */}
             {item.is_done ? (
-              // 已完成：不显眼的文字链接，避免误触
               <button onClick={() => onToggleBack(item)} style={{
                 fontSize:11, color:"#bbb", background:"none", border:"none",
                 cursor:"pointer", padding:"4px 6px", textDecoration:"underline",
               }}>撤回</button>
             ) : (
-              <button onClick={handleCheckClick} style={{
-                width:28, height:28, borderRadius:"50%",
-                border:`1.5px solid ${c.border}`,
-                background:"rgba(255,255,255,0.6)", color:c.line,
-                fontSize:14, cursor:"pointer",
+              /* 未完成单条：勾选圆圈（多条时不显示，各行自己有） */
+              !isMulti && (
+                <div style={{
+                  width:26, height:26, borderRadius:"50%",
+                  border:`1.5px solid ${c.border}`,
+                  background:"rgba(255,255,255,0.6)", color:c.line,
+                  fontSize:14, display:"flex", alignItems:"center", justifyContent:"center",
+                  pointerEvents:"none", // 点击由整张卡片接管
+                }}>○</div>
+              )
+            )}
+            <button
+              onClick={handleDeleteClick}
+              title={confirmDelete ? "再次点击确认删除" : "删除"}
+              style={{
+                height:28, borderRadius:14,
+                border:"none",
+                background: confirmDelete ? "#e05a3a" : "rgba(255,255,255,0.5)",
+                color: confirmDelete ? "#fff" : "#ccc",
+                fontSize: confirmDelete ? 11 : 14,
+                fontWeight: confirmDelete ? 600 : 400,
+                cursor:"pointer",
+                padding: confirmDelete ? "0 10px" : "0",
+                width: confirmDelete ? "auto" : 28,
                 display:"flex", alignItems:"center", justifyContent:"center",
                 transition:"all 0.2s",
-              }}>○</button>
-            )}
-            <button onClick={() => onDelete(item.id)} style={{
-              width:28, height:28, borderRadius:"50%",
-              border:"none", background:"rgba(255,255,255,0.5)",
-              color:"#ccc", fontSize:14, cursor:"pointer",
-              display:"flex", alignItems:"center", justifyContent:"center",
-              transition:"color 0.2s",
-            }}
-              onMouseEnter={e => e.currentTarget.style.color="#e05a3a"}
-              onMouseLeave={e => e.currentTarget.style.color="#ccc"}
-            >✕</button>
+                whiteSpace:"nowrap",
+              }}
+              onMouseEnter={e => { if (!confirmDelete) e.currentTarget.style.color="#e05a3a"; }}
+              onMouseLeave={e => { if (!confirmDelete) e.currentTarget.style.color="#ccc"; }}
+            >{confirmDelete ? "确认删除" : "✕"}</button>
           </div>
         </div>
 
+        {/* 金额气泡 */}
         {showAmountBubble && (
           <AmountBubble
             color={c}
@@ -357,11 +424,10 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
   );
 }
 
-// ─── 顶部统计摘要栏（替换原来的 StatsPanel） ─────────────────
+// ─── 顶部统计摘要栏 ───────────────────────────────────────────
 function StatsSummary({ items }) {
-  const [view, setView] = useState("week"); // week | month | all
+  const [view, setView] = useState("week");
 
-  // 本周/本月已花
   const now = Date.now();
   const currentKey = view === "week" ? getWeekKey(now) : getMonthKey(now);
 
@@ -378,48 +444,37 @@ function StatsSummary({ items }) {
   const periodLabel = view === "week" ? "本周" : view === "month" ? "本月" : "累计";
 
   return (
-    <div style={{
-      margin:"0 16px 14px",
-      display:"flex", gap:8, alignItems:"stretch",
-    }}>
-      {/* 已花金额 */}
+    <div style={{ margin:"0 16px 14px", display:"flex", gap:8, alignItems:"stretch" }}>
       <div style={{
         flex:2, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
-        borderRadius:14, padding:"10px 14px",
-        border:"1px solid rgba(255,255,255,0.9)",
+        borderRadius:14, padding:"10px 14px", border:"1px solid rgba(255,255,255,0.9)",
         display:"flex", flexDirection:"column", justifyContent:"space-between",
       }}>
         <div style={{ fontSize:10, color:"#7a9a85", letterSpacing:0.5 }}>{periodLabel}已花</div>
         <div style={{ fontSize:22, fontWeight:700, color:"#1a3a2a", marginTop:2 }}>
           ¥{spent.toFixed(0)}
         </div>
-        {/* 周/月/累计切换 */}
         <div style={{ display:"flex", gap:4, marginTop:6 }}>
           {[["week","按周"],["month","按月"],["all","累计"]].map(([v,l]) => (
             <button key={v} onClick={() => setView(v)} style={{
               padding:"2px 8px", borderRadius:10, border:"none", cursor:"pointer", fontSize:10,
               background: view===v ? "#2d7a58" : "rgba(45,122,88,0.08)",
-              color: view===v ? "#fff" : "#7a9a85",
-              transition:"all 0.2s",
+              color: view===v ? "#fff" : "#7a9a85", transition:"all 0.2s",
             }}>{l}</button>
           ))}
         </div>
       </div>
-
-      {/* 右侧两格 */}
       <div style={{ flex:1, display:"flex", flexDirection:"column", gap:8 }}>
         <div style={{
           flex:1, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
-          borderRadius:14, padding:"8px 12px",
-          border:"1px solid rgba(255,255,255,0.9)",
+          borderRadius:14, padding:"8px 12px", border:"1px solid rgba(255,255,255,0.9)",
         }}>
           <div style={{ fontSize:10, color:"#7a9a85" }}>待买项</div>
           <div style={{ fontSize:18, fontWeight:700, color:"#1a3a2a", marginTop:2 }}>{todoCount}</div>
         </div>
         <div style={{
           flex:1, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
-          borderRadius:14, padding:"8px 12px",
-          border:"1px solid rgba(255,255,255,0.9)",
+          borderRadius:14, padding:"8px 12px", border:"1px solid rgba(255,255,255,0.9)",
         }}>
           <div style={{ fontSize:10, color:"#7a9a85" }}>预算待购</div>
           <div style={{ fontSize:18, fontWeight:700, color: pendingTotal > 0 ? "#e09030" : "#1a3a2a", marginTop:2 }}>
@@ -433,12 +488,12 @@ function StatsSummary({ items }) {
 
 // ─── 主组件 ────────────────────────────────────────────────────
 export default function ShoppingPage({ supabase }) {
-  const [items,       setItems]       = useState([]);
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState(null);
-  const [showDone,    setShowDone]    = useState(false);
-  const [confirm,     setConfirm]     = useState(false);
-  const [showAddSheet, setShowAddSheet] = useState(false); // 控制底部添加弹窗
+  const [items,        setItems]        = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState(null);
+  const [showDone,     setShowDone]     = useState(false);
+  const [confirm,      setConfirm]      = useState(false);
+  const [showAddSheet, setShowAddSheet] = useState(false);
 
   const loadItems = useCallback(async () => {
     setError(null);
@@ -508,8 +563,8 @@ export default function ShoppingPage({ supabase }) {
     <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", position:"relative" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=ZCOOL+KuaiLe&display=swap');
-        @keyframes noteIn { from { opacity:0; transform:translateY(-8px) rotate(-1deg); } to { opacity:1; transform:translateY(0) rotate(0deg); } }
-        @keyframes spin   { to { transform:rotate(360deg); } }
+        @keyframes noteIn  { from { opacity:0; transform:translateY(-8px) rotate(-1deg); } to { opacity:1; transform:translateY(0) rotate(0deg); } }
+        @keyframes spin    { to { transform:rotate(360deg); } }
         @keyframes slideUp { from { transform:translateY(100%); opacity:0; } to { transform:translateY(0); opacity:1; } }
       `}</style>
 
@@ -521,17 +576,14 @@ export default function ShoppingPage({ supabase }) {
         />
       )}
 
-      {/* 底部添加弹窗 */}
       {showAddSheet && (
         <AddSheet onAdd={handleAdd} onClose={() => setShowAddSheet(false)} />
       )}
 
-      {/* 统计摘要栏 */}
       <div style={{ padding:"12px 0 0", flexShrink:0 }}>
         <StatsSummary items={items} />
       </div>
 
-      {/* 列表区 */}
       <div style={{ flex:1, overflowY:"auto", padding:"0 16px 80px" }}>
         {error && (
           <div style={{ padding:"10px 14px", background:"#fff3f0", borderRadius:10, fontSize:13, color:"#c04040", marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
@@ -547,7 +599,6 @@ export default function ShoppingPage({ supabase }) {
           </div>
         )}
 
-        {/* 待采购 — 单列 */}
         {todoItems.length > 0 && (
           <>
             <div style={{ fontSize:11, color:"#7a9a85", marginBottom:10, letterSpacing:1 }}>
@@ -565,7 +616,6 @@ export default function ShoppingPage({ supabase }) {
           </>
         )}
 
-        {/* 已完成 — 单列 */}
         {doneItems.length > 0 && (
           <>
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10 }}>
@@ -597,7 +647,6 @@ export default function ShoppingPage({ supabase }) {
         )}
       </div>
 
-      {/* 悬浮添加按钮（FAB）— 相对定位在列表区右下角 */}
       <button
         onClick={() => setShowAddSheet(true)}
         style={{
@@ -608,8 +657,7 @@ export default function ShoppingPage({ supabase }) {
           cursor:"pointer", lineHeight:1,
           display:"flex", alignItems:"center", justifyContent:"center",
           boxShadow:"0 4px 20px rgba(45,122,88,0.45)",
-          transition:"transform 0.15s",
-          zIndex:100,
+          transition:"transform 0.15s", zIndex:100,
         }}
         onMouseEnter={e => e.currentTarget.style.transform="scale(1.08)"}
         onMouseLeave={e => e.currentTarget.style.transform="scale(1)"}
