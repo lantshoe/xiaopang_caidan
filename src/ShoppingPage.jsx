@@ -71,23 +71,28 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
   );
 }
 
-// ─── 底部弹窗添加便签 ─────────────────────────────────────────
-function AddSheet({ onAdd, onClose }) {
-  const [text,  setText]  = useState("");
-  const [color, setColor] = useState(0);
+// ─── 底部弹窗：新增 / 编辑便签 ───────────────────────────────
+function AddSheet({ onAdd, onClose, editItem, onEdit }) {
+  const isEdit = !!editItem;
+  const [text,  setText]  = useState(isEdit ? editItem.content : "");
+  const [color, setColor] = useState(isEdit ? (editItem.color_idx ?? 0) : 0);
   const textRef = useRef(null);
 
   useEffect(() => { setTimeout(() => textRef.current?.focus(), 100); }, []);
 
-  const handleAdd = () => {
+  const handleSubmit = () => {
     const t = text.trim();
     if (!t) return;
-    onAdd({ content: t, color_idx: color });
+    if (isEdit) {
+      onEdit({ ...editItem, content: t, color_idx: color });
+    } else {
+      onAdd({ content: t, color_idx: color });
+    }
     onClose();
   };
 
   const handleKey = (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") handleAdd();
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") handleSubmit();
     if (e.key === "Escape") onClose();
   };
 
@@ -106,7 +111,9 @@ function AddSheet({ onAdd, onClose }) {
         animation:"slideUp 0.3s cubic-bezier(.22,.68,0,1.2) both", zIndex:1,
       }} onClick={e => e.stopPropagation()}>
         <div style={{ width:36, height:4, borderRadius:2, background:"rgba(45,122,88,0.2)", margin:"0 auto 16px" }} />
-        <div style={{ fontSize:14, fontWeight:700, color:"#1a3a2a", marginBottom:12 }}>新建采购便签</div>
+        <div style={{ fontSize:14, fontWeight:700, color:"#1a3a2a", marginBottom:12 }}>
+          {isEdit ? "修改便签" : "新建采购便签"}
+        </div>
         <div style={{
           background:c.bg, border:`1px solid ${c.border}`,
           borderRadius:"2px 16px 16px 16px", padding:"14px 14px 12px",
@@ -152,12 +159,12 @@ function AddSheet({ onAdd, onClose }) {
             padding:"8px 16px", borderRadius:20, border:"1px solid #ddd",
             background:"#fff", color:"#888", fontSize:13, cursor:"pointer",
           }}>取消</button>
-          <button onClick={handleAdd} disabled={!text.trim()} style={{
+          <button onClick={handleSubmit} disabled={!text.trim()} style={{
             padding:"8px 20px", borderRadius:20,
             background: text.trim() ? "#2d7a58" : "#ccc",
             color:"#fff", border:"none", fontSize:13, fontWeight:700,
             cursor: text.trim() ? "pointer" : "not-allowed", transition:"all 0.2s",
-          }}>贴上去 ✦</button>
+          }}>{isEdit ? "保存修改 ✦" : "贴上去 ✦"}</button>
         </div>
       </div>
     </div>
@@ -211,67 +218,96 @@ function AmountBubble({ color, onSave, onSkip }) {
 }
 
 // ─── 单张便签 ──────────────────────────────────────────────────
-function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
+// 子条目状态：0 = 未处理，1 = 已买，2 = 跳过（缺货/没买到）
+function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
   const c = NOTE_COLORS[item.color_idx ?? 0];
   const subItems = parseItems(item.content);
   const isMulti  = subItems.length > 1;
 
-  // 各子条目的勾选状态（纯本地，刷新重置；整张完成后不再需要）
-  const [checked, setChecked] = useState(() => new Array(subItems.length).fill(false));
+  // 0=未处理 1=已买 2=跳过
+  const [subState, setSubState] = useState(() => new Array(subItems.length).fill(0));
   const [showAmountBubble, setShowAmountBubble] = useState(false);
 
-  // 删除二步确认：第一次点亮红色，3秒内再点才真删，否则自动复原
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const deleteTimerRef = useRef(null);
-
-  const handleDeleteClick = (e) => {
-    e.stopPropagation();
-    if (confirmDelete) {
-      clearTimeout(deleteTimerRef.current);
-      onDelete(item.id);
-    } else {
-      setConfirmDelete(true);
-      deleteTimerRef.current = setTimeout(() => setConfirmDelete(false), 3000);
-    }
-  };
-
-  // 组件卸载时清理定时器
-  useEffect(() => () => clearTimeout(deleteTimerRef.current), []);
-
-  const toggleSub = (i) => {
+  // 循环切换：0→1→2→0；已完成整张时不可操作
+  const cycleSub = (i) => {
     if (item.is_done) return;
-    const next = [...checked];
-    next[i] = !next[i];
-    setChecked(next);
-    // 全部子条目勾完 → 自动弹金额气泡
-    if (next.every(Boolean)) setShowAmountBubble(true);
+    setSubState(prev => {
+      const next = [...prev];
+      next[i] = (next[i] + 1) % 3;
+      // 全部都处理过（已买或跳过）→ 弹金额气泡
+      const updated = next;
+      if (updated.every(s => s !== 0)) setShowAmountBubble(true);
+      return updated;
+    });
   };
 
-  // 单条便签：点整张卡片完成
+  // 单条便签：点整张触发完成
   const handleSingleCheck = () => {
     if (!item.is_done) setShowAmountBubble(true);
   };
 
-  const doneCount  = checked.filter(Boolean).length;
-  const allChecked = isMulti && doneCount === subItems.length;
+  // 长按编辑（未完成时）
+  const pressTimer = useRef(null);
+  const handlePressStart = (e) => {
+    if (item.is_done) return;
+    pressTimer.current = setTimeout(() => {
+      onOpenEdit(item);
+    }, 600);
+  };
+  const handlePressEnd = () => clearTimeout(pressTimer.current);
+
+  // 删除二步确认
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleteTimer = useRef(null);
+  const handleDeleteClick = (e) => {
+    e.stopPropagation();
+    if (confirmDelete) {
+      clearTimeout(deleteTimer.current);
+      onDelete(item.id);
+    } else {
+      setConfirmDelete(true);
+      deleteTimer.current = setTimeout(() => setConfirmDelete(false), 3000);
+    }
+  };
+  useEffect(() => () => {
+    clearTimeout(pressTimer.current);
+    clearTimeout(deleteTimer.current);
+  }, []);
+
+  const doneCount    = subState.filter(s => s === 1).length;
+  const skippedCount = subState.filter(s => s === 2).length;
+  const allHandled   = isMulti && subState.every(s => s !== 0);
+
+  // 子条目状态对应的视觉
+  const subIcon = (s) => {
+    if (s === 1) return { bg:"#2d7a58", border:"#2d7a58", text:"✓", color:"#fff" };
+    if (s === 2) return { bg:"#f0f0ec", border:"#ccc",    text:"✕", color:"#bbb" };
+    return null; // 未处理：空圆圈
+  };
 
   return (
-    <div style={{
-      background: item.is_done ? "#f5f5f0" : c.bg,
-      border: `1px solid ${item.is_done ? "#e0e0d8" : c.border}`,
-      borderRadius: "2px 14px 14px 14px",
-      padding:"14px 14px 12px",
-      boxShadow: item.is_done
-        ? "1px 2px 6px rgba(0,0,0,0.06)"
-        : `2px 4px 12px ${c.shadow}, 0 1px 3px rgba(0,0,0,0.07)`,
-      position:"relative", overflow:"hidden",
-      transition:"all 0.35s ease",
-      opacity: item.is_done ? 0.65 : 1,
-      animation: "noteIn 0.3s cubic-bezier(.22,.68,0,1.2) both",
-      // 单条时整张可点
-      cursor: (!isMulti && !item.is_done) ? "pointer" : "default",
-    }}
+    <div
+      style={{
+        background: item.is_done ? "#f5f5f0" : c.bg,
+        border: `1px solid ${item.is_done ? "#e0e0d8" : c.border}`,
+        borderRadius: "2px 14px 14px 14px",
+        padding:"14px 14px 12px",
+        boxShadow: item.is_done
+          ? "1px 2px 6px rgba(0,0,0,0.06)"
+          : `2px 4px 12px ${c.shadow}, 0 1px 3px rgba(0,0,0,0.07)`,
+        position:"relative", overflow:"hidden",
+        transition:"all 0.35s ease",
+        opacity: item.is_done ? 0.65 : 1,
+        animation: "noteIn 0.3s cubic-bezier(.22,.68,0,1.2) both",
+        cursor: (!isMulti && !item.is_done) ? "pointer" : "default",
+        userSelect:"none", WebkitUserSelect:"none",
+      }}
       onClick={!isMulti ? handleSingleCheck : undefined}
+      onMouseDown={handlePressStart}
+      onMouseUp={handlePressEnd}
+      onMouseLeave={handlePressEnd}
+      onTouchStart={handlePressStart}
+      onTouchEnd={handlePressEnd}
     >
       {/* 折角 */}
       <div style={{
@@ -280,7 +316,7 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
         borderColor:`${item.is_done ? "#e0e0d8" : c.border} transparent transparent transparent`,
       }} />
 
-      {/* 线条背景（未完成时显示） */}
+      {/* 线条背景 */}
       {!item.is_done && (
         <div style={{
           position:"absolute", inset:0, pointerEvents:"none", overflow:"hidden",
@@ -289,17 +325,26 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
         }} />
       )}
 
+      {/* 编辑提示（未完成时右上角显示） */}
+      {!item.is_done && (
+        <div style={{
+          position:"absolute", top:6, right:44, fontSize:9, color:`${c.line}99`,
+          letterSpacing:0.3, pointerEvents:"none",
+        }}>长按编辑</div>
+      )}
+
       <div style={{ position:"relative", zIndex:1 }}>
 
-        {/* ── 多条目：逐行展示 ── */}
+        {/* ── 多条目 ── */}
         {isMulti ? (
           <div style={{ marginBottom:8 }}>
             {subItems.map((line, i) => {
-              const isDone = item.is_done || checked[i];
+              const st   = item.is_done ? 1 : subState[i];
+              const icon = subIcon(st);
               return (
                 <div
                   key={i}
-                  onClick={() => toggleSub(i)}
+                  onClick={(e) => { e.stopPropagation(); cycleSub(i); }}
                   style={{
                     display:"flex", alignItems:"center", gap:10,
                     padding:"6px 0",
@@ -308,33 +353,42 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
                     WebkitTapHighlightColor:"transparent",
                   }}
                 >
-                  {/* 勾选圆圈（已完成整张时隐藏） */}
+                  {/* 状态圆圈（整张已完成时隐藏） */}
                   {!item.is_done && (
                     <div style={{
                       width:20, height:20, borderRadius:"50%", flexShrink:0,
-                      border:`1.5px solid ${checked[i] ? "#2d7a58" : c.line}`,
-                      background: checked[i] ? "#2d7a58" : "rgba(255,255,255,0.55)",
+                      border:`1.5px solid ${icon ? icon.border : c.line}`,
+                      background: icon ? icon.bg : "rgba(255,255,255,0.55)",
                       display:"flex", alignItems:"center", justifyContent:"center",
-                      fontSize:11, color:"#fff", transition:"all 0.2s",
+                      fontSize:10, color: icon ? icon.color : "transparent",
+                      transition:"all 0.2s",
                     }}>
-                      {checked[i] && "✓"}
+                      {icon?.text}
                     </div>
                   )}
                   <span style={{
                     fontSize:14, lineHeight:1.65, flex:1,
                     fontFamily:"'Ma Shan Zheng','ZCOOL KuaiLe','Noto Sans SC',cursive",
                     letterSpacing:"0.3px",
-                    color: isDone ? "#bbb" : "#2a2a2a",
-                    textDecoration: isDone ? "line-through" : "none",
-                    textDecorationColor:"#aaa",
+                    color: (st === 1) ? "#bbb" : (st === 2) ? "#ccc" : (item.is_done ? "#bbb" : "#2a2a2a"),
+                    textDecoration: (st !== 0 || item.is_done) ? "line-through" : "none",
+                    textDecorationColor: st === 2 ? "#ddd" : "#aaa",
                     transition:"all 0.25s",
+                    fontStyle: st === 2 ? "italic" : "normal",
                   }}>{line}</span>
+                  {/* 跳过标签 */}
+                  {st === 2 && !item.is_done && (
+                    <span style={{
+                      fontSize:9, color:"#bbb", background:"rgba(0,0,0,0.05)",
+                      borderRadius:6, padding:"1px 5px", flexShrink:0,
+                    }}>缺货</span>
+                  )}
                 </div>
               );
             })}
           </div>
         ) : (
-          /* ── 单条目：整张样式 ── */
+          /* ── 单条目 ── */
           <p style={{
             fontSize:14, lineHeight:"26px",
             color: item.is_done ? "#999" : "#2a2a2a",
@@ -345,15 +399,16 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
           }}>{item.content}</p>
         )}
 
-        {/* ── 底部 meta 行 ── */}
+        {/* ── 底部 meta ── */}
         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginTop:6 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <span style={{ fontSize:10, color:"#bbb" }}>{formatDate(item.created_at)}</span>
 
-            {/* 多条进度提示（未完成时） */}
-            {isMulti && !item.is_done && doneCount > 0 && !allChecked && (
+            {/* 多条进度 */}
+            {isMulti && !item.is_done && (doneCount > 0 || skippedCount > 0) && !allHandled && (
               <span style={{ fontSize:11, color:c.line, fontWeight:600 }}>
                 {doneCount}/{subItems.length} 已买
+                {skippedCount > 0 && <span style={{ color:"#bbb", fontWeight:400 }}> · {skippedCount} 缺货</span>}
               </span>
             )}
 
@@ -370,21 +425,19 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
           </div>
 
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-            {/* 已完成整张：只显示"撤回"文字链接 */}
             {item.is_done ? (
               <button onClick={() => onToggleBack(item)} style={{
                 fontSize:11, color:"#bbb", background:"none", border:"none",
                 cursor:"pointer", padding:"4px 6px", textDecoration:"underline",
               }}>撤回</button>
             ) : (
-              /* 未完成单条：勾选圆圈（多条时不显示，各行自己有） */
               !isMulti && (
                 <div style={{
                   width:26, height:26, borderRadius:"50%",
                   border:`1.5px solid ${c.border}`,
                   background:"rgba(255,255,255,0.6)", color:c.line,
                   fontSize:14, display:"flex", alignItems:"center", justifyContent:"center",
-                  pointerEvents:"none", // 点击由整张卡片接管
+                  pointerEvents:"none",
                 }}>○</div>
               )
             )}
@@ -392,8 +445,7 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
               onClick={handleDeleteClick}
               title={confirmDelete ? "再次点击确认删除" : "删除"}
               style={{
-                height:28, borderRadius:14,
-                border:"none",
+                height:28, borderRadius:14, border:"none",
                 background: confirmDelete ? "#e05a3a" : "rgba(255,255,255,0.5)",
                 color: confirmDelete ? "#fff" : "#ccc",
                 fontSize: confirmDelete ? 11 : 14,
@@ -402,8 +454,7 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete }) {
                 padding: confirmDelete ? "0 10px" : "0",
                 width: confirmDelete ? "auto" : 28,
                 display:"flex", alignItems:"center", justifyContent:"center",
-                transition:"all 0.2s",
-                whiteSpace:"nowrap",
+                transition:"all 0.2s", whiteSpace:"nowrap",
               }}
               onMouseEnter={e => { if (!confirmDelete) e.currentTarget.style.color="#e05a3a"; }}
               onMouseLeave={e => { if (!confirmDelete) e.currentTarget.style.color="#ccc"; }}
@@ -494,6 +545,7 @@ export default function ShoppingPage({ supabase }) {
   const [showDone,     setShowDone]     = useState(false);
   const [confirm,      setConfirm]      = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
+  const [editItem,     setEditItem]     = useState(null); // 正在编辑的便签
 
   const loadItems = useCallback(async () => {
     setError(null);
@@ -521,6 +573,14 @@ export default function ShoppingPage({ supabase }) {
     await supabase.from("shopping_items").insert({
       content, color_idx: color_idx ?? 0, amount: null, is_done: false,
     });
+  };
+
+  // 编辑保存：更新 content 和 color_idx，同时重置完成状态
+  const handleEdit = async (updated) => {
+    setItems(prev => prev.map(i => i.id === updated.id ? { ...i, content: updated.content, color_idx: updated.color_idx } : i));
+    await supabase.from("shopping_items")
+      .update({ content: updated.content, color_idx: updated.color_idx })
+      .eq("id", updated.id);
   };
 
   const handleComplete = async (item, amount) => {
@@ -576,8 +636,14 @@ export default function ShoppingPage({ supabase }) {
         />
       )}
 
-      {showAddSheet && (
-        <AddSheet onAdd={handleAdd} onClose={() => setShowAddSheet(false)} />
+      {/* 新增 或 编辑 弹窗 */}
+      {(showAddSheet || editItem) && (
+        <AddSheet
+          onAdd={handleAdd}
+          onEdit={handleEdit}
+          editItem={editItem}
+          onClose={() => { setShowAddSheet(false); setEditItem(null); }}
+        />
       )}
 
       <div style={{ padding:"12px 0 0", flexShrink:0 }}>
@@ -610,6 +676,7 @@ export default function ShoppingPage({ supabase }) {
                   onComplete={handleComplete}
                   onToggleBack={handleToggleBack}
                   onDelete={deleteItem}
+                  onOpenEdit={setEditItem}
                 />
               ))}
             </div>
@@ -639,6 +706,7 @@ export default function ShoppingPage({ supabase }) {
                     onComplete={handleComplete}
                     onToggleBack={handleToggleBack}
                     onDelete={deleteItem}
+                    onOpenEdit={setEditItem}
                   />
                 ))}
               </div>
