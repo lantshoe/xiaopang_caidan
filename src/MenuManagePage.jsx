@@ -74,6 +74,11 @@ function ImagePickerModal({ supabase, onSelect, onClose }) {
 // ─── 菜品编辑弹窗 ──────────────────────────────────────────────
 function ItemFormModal({ supabase, item, categories, onSave, onClose }) {
   const isNew = !item?.id;
+
+  // 构建分类树，用于选择器
+  const parentCats = categories.filter(c => !c.parent_id);
+  const childCats  = (pid) => categories.filter(c => c.parent_id === pid);
+
   const [form, setForm] = useState({
     name:         item?.name         ?? "",
     description:  item?.description  ?? "",
@@ -89,7 +94,6 @@ function ItemFormModal({ supabase, item, categories, onSave, onClose }) {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  // 直接上传图片（不经过图库）
   const handleDirectUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -139,7 +143,6 @@ function ItemFormModal({ supabase, item, categories, onSave, onClose }) {
             {/* 图片区 */}
             <label style={labelStyle}>菜品图片</label>
             <div style={{ display:"flex", gap:10, marginBottom:16 }}>
-              {/* 预览 */}
               <div style={{ width:80, height:80, borderRadius:12, background:"#e8f5ee", flexShrink:0, overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, color:"#7a9a85" }}>
                 {form.image_url
                   ? <img src={form.image_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} />
@@ -167,7 +170,7 @@ function ItemFormModal({ supabase, item, categories, onSave, onClose }) {
             <label style={labelStyle}>简介</label>
             <input value={form.description} onChange={e=>set("description",e.target.value)} placeholder="如：五花肉慢炖三小时，入口即化" style={{ ...inputStyle, marginBottom:14 }} />
 
-            {/* 价格 + 分类 */}
+            {/* 价格 + 分类（支持子分类） */}
             <div style={{ display:"flex", gap:12, marginBottom:14 }}>
               <div style={{ flex:1 }}>
                 <label style={labelStyle}>价格 *</label>
@@ -176,7 +179,19 @@ function ItemFormModal({ supabase, item, categories, onSave, onClose }) {
               <div style={{ flex:1 }}>
                 <label style={labelStyle}>分类</label>
                 <select value={form.category_id} onChange={e=>set("category_id",e.target.value)} style={{ ...inputStyle, appearance:"none" }}>
-                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {parentCats.map(pc => {
+                    const children = childCats(pc.id);
+                    return children.length > 0 ? (
+                      <optgroup key={pc.id} label={`${pc.icon ?? ""} ${pc.name}`}>
+                        <option value={pc.id}>{pc.name}（全部）</option>
+                        {children.map(cc => (
+                          <option key={cc.id} value={cc.id}>　└ {cc.name}</option>
+                        ))}
+                      </optgroup>
+                    ) : (
+                      <option key={pc.id} value={pc.id}>{pc.icon ?? ""} {pc.name}</option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -216,37 +231,92 @@ function ItemFormModal({ supabase, item, categories, onSave, onClose }) {
   );
 }
 
-// ─── 分类管理弹窗 ──────────────────────────────────────────────
+// ─── 分类排序拖拽行 ────────────────────────────────────────────
+function SortableRow({ cat, index, onDragStart, onDragEnter, onDragEnd, isDragging, isOver, children }) {
+  return (
+    <div
+      draggable
+      onDragStart={() => onDragStart(index)}
+      onDragEnter={() => onDragEnter(index)}
+      onDragEnd={onDragEnd}
+      style={{
+        opacity: isDragging ? 0.4 : 1,
+        background: isOver ? "rgba(45,122,88,0.08)" : "rgba(255,255,255,0.8)",
+        borderRadius:14,
+        marginBottom:8,
+        border: isOver ? "1.5px dashed #2d7a58" : "1px solid rgba(255,255,255,0.9)",
+        transition:"opacity 0.15s, background 0.15s, border 0.15s",
+        cursor:"grab",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ─── 分类管理弹窗（支持子分类 + 排序） ────────────────────────
 function CategoryModal({ supabase, categories, onSave, onClose }) {
-  const [list,      setList]      = useState(categories.map(c => ({ ...c })));
-  const [newName,   setNewName]   = useState("");
-  const [newIcon,   setNewIcon]   = useState("◈");
-  const [uploading, setUploading] = useState(null); // cat id
+  const [list,        setList]        = useState(categories.map(c => ({ ...c })));
+  const [newName,     setNewName]     = useState("");
+  const [newIcon,     setNewIcon]     = useState("◈");
+  const [newParentId, setNewParentId] = useState(""); // "" = 顶级
+  const [uploading,   setUploading]   = useState(null);
+  const [saving,      setSaving]      = useState(false);
+  const [dragFrom,    setDragFrom]    = useState(null);
+  const [dragOver,    setDragOver]    = useState(null);
+  const [expandedPar, setExpandedPar] = useState({}); // 展开哪些父分类的子列表
   const fileRefs = useRef({});
 
-  const ICONS = ["◈","◉","◎","◆","◇","✦","★","♥","▲","●"];
+  const ICONS = ["◈","◉","◎","◆","◇","✦","★","♥","▲","●","🍜","🍱","🥗","🍣","🍲","🥘","🍛","🥩","🍰","🥤"];
 
+  const parents  = list.filter(c => !c.parent_id).sort((a,b) => a.sort_order - b.sort_order);
+  const children = (pid) => list.filter(c => c.parent_id === pid).sort((a,b) => a.sort_order - b.sort_order);
+
+  // ── 添加分类 ──
   const addCat = async () => {
     if (!newName.trim()) return;
-    const { data, error } = await supabase.from("categories")
-      .insert({ name: newName.trim(), icon: newIcon, sort_order: list.length + 1 })
-      .select().single();
-    if (!error && data) { setList(l => [...l, data]); setNewName(""); }
+    const parentSortBase = newParentId
+      ? children(newParentId).length + 1
+      : parents.length + 1;
+    const payload = {
+      name: newName.trim(),
+      icon: newIcon,
+      sort_order: parentSortBase,
+      ...(newParentId ? { parent_id: newParentId } : {}),
+    };
+    const { data, error } = await supabase.from("categories").insert(payload).select().single();
+    if (!error && data) {
+      setList(l => [...l, data]);
+      setNewName("");
+      // 如果添加了子分类，自动展开父分类
+      if (newParentId) setExpandedPar(e => ({ ...e, [newParentId]: true }));
+    }
   };
 
+  // ── 切换显示 ──
   const toggleActive = async (cat) => {
     const newVal = !cat.is_active;
     setList(l => l.map(c => c.id === cat.id ? { ...c, is_active: newVal } : c));
     await supabase.from("categories").update({ is_active: newVal }).eq("id", cat.id);
   };
 
-  const deleteCat = async (id) => {
-    if (!confirm("删除分类不会删除该分类下的菜品，但菜品会变成无分类。确定吗？")) return;
-    await supabase.from("categories").delete().eq("id", id);
-    setList(l => l.filter(c => c.id !== id));
+  // ── 删除分类 ──
+  const deleteCat = async (cat) => {
+    const hasChildren = list.some(c => c.parent_id === cat.id);
+    const msg = hasChildren
+      ? `「${cat.name}」下还有子分类，删除后子分类也会变为顶级分类。确定删除吗？`
+      : `确定删除「${cat.name}」？`;
+    if (!confirm(msg)) return;
+    // 把子分类的 parent_id 清空
+    if (hasChildren) {
+      await supabase.from("categories").update({ parent_id: null }).eq("parent_id", cat.id);
+      setList(l => l.map(c => c.parent_id === cat.id ? { ...c, parent_id: null } : c));
+    }
+    await supabase.from("categories").delete().eq("id", cat.id);
+    setList(l => l.filter(c => c.id !== cat.id));
   };
 
-  // 上传分类图标
+  // ── 图标上传 ──
   const handleIconUpload = async (cat, file) => {
     if (!file) return;
     setUploading(cat.id);
@@ -267,84 +337,195 @@ function CategoryModal({ supabase, categories, onSave, onClose }) {
     setList(l => l.map(c => c.id === cat.id ? { ...c, icon_url: "" } : c));
   };
 
+  // ── 拖拽排序（仅顶级分类之间互排） ──
+  const handleDragStart = (idx) => setDragFrom(idx);
+  const handleDragEnter = (idx) => setDragOver(idx);
+  const handleDragEnd   = async () => {
+    if (dragFrom === null || dragOver === null || dragFrom === dragOver) {
+      setDragFrom(null); setDragOver(null); return;
+    }
+    const reordered = [...parents];
+    const [moved] = reordered.splice(dragFrom, 1);
+    reordered.splice(dragOver, 0, moved);
+    // 更新 sort_order
+    const updates = reordered.map((c, i) => ({ id: c.id, sort_order: i + 1 }));
+    setList(l => {
+      const map = {};
+      updates.forEach(u => { map[u.id] = u.sort_order; });
+      return l.map(c => map[c.id] !== undefined ? { ...c, sort_order: map[c.id] } : c);
+    });
+    setSaving(true);
+    await Promise.all(updates.map(u => supabase.from("categories").update({ sort_order: u.sort_order }).eq("id", u.id)));
+    setSaving(false);
+    setDragFrom(null); setDragOver(null);
+  };
+
+  // ── 子分类上移/下移 ──
+  const moveChild = async (pid, idx, dir) => {
+    const ch = children(pid);
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= ch.length) return;
+    const a = ch[idx], b = ch[newIdx];
+    const aOrder = a.sort_order, bOrder = b.sort_order;
+    setList(l => l.map(c => {
+      if (c.id === a.id) return { ...c, sort_order: bOrder };
+      if (c.id === b.id) return { ...c, sort_order: aOrder };
+      return c;
+    }));
+    await Promise.all([
+      supabase.from("categories").update({ sort_order: bOrder }).eq("id", a.id),
+      supabase.from("categories").update({ sort_order: aOrder }).eq("id", b.id),
+    ]);
+  };
+
+  // ── 渲染单个分类行 ──
+  const renderCatRow = (cat, isChild = false, childIdx = 0, childTotal = 0, parentId = null) => {
+    const busy = uploading === cat.id;
+    return (
+      <div key={cat.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px" }}>
+        {/* 拖拽手柄（仅顶级） / 子分类排序箭头 */}
+        {isChild ? (
+          <div style={{ display:"flex", flexDirection:"column", gap:2, flexShrink:0 }}>
+            <button onClick={() => moveChild(parentId, childIdx, -1)} disabled={childIdx === 0}
+              style={{ width:20, height:20, border:"none", background:"none", cursor: childIdx===0?"not-allowed":"pointer", color: childIdx===0?"#ddd":"#2d7a58", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>▲</button>
+            <button onClick={() => moveChild(parentId, childIdx, 1)} disabled={childIdx === childTotal - 1}
+              style={{ width:20, height:20, border:"none", background:"none", cursor: childIdx===childTotal-1?"not-allowed":"pointer", color: childIdx===childTotal-1?"#ddd":"#2d7a58", fontSize:12, display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>▼</button>
+          </div>
+        ) : (
+          <div style={{ width:20, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", color:"#ccc", fontSize:16, cursor:"grab", userSelect:"none" }}>⠿</div>
+        )}
+
+        {/* 图标 */}
+        <div style={{ position:"relative", flexShrink:0 }}>
+          <div onClick={() => fileRefs.current[cat.id]?.click()} style={{ width:isChild?36:44, height:isChild?36:44, borderRadius:10, overflow:"hidden", background:"rgba(45,122,88,0.08)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:"1.5px dashed rgba(45,122,88,0.25)" }}>
+            {busy
+              ? <div style={{ width:14, height:14, border:"2px solid rgba(45,122,88,0.2)", borderTopColor:"#2d7a58", borderRadius:"50%", animation:"spin 0.7s linear infinite" }} />
+              : cat.icon_url
+                ? <img src={cat.icon_url} alt={cat.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                : <span style={{ fontSize: isChild?16:20 }}>{cat.icon}</span>
+            }
+          </div>
+          {cat.icon_url && (
+            <button onClick={() => clearIconUrl(cat)} style={{ position:"absolute", top:-4, right:-4, width:14, height:14, borderRadius:"50%", background:"#e05a3a", border:"1.5px solid #fff", color:"#fff", fontSize:8, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>✕</button>
+          )}
+          <input ref={el => fileRefs.current[cat.id] = el} type="file" accept="image/*,.gif"
+            onChange={e => handleIconUpload(cat, e.target.files?.[0])} style={{ display:"none" }} />
+        </div>
+
+        {/* 名称 */}
+        <span style={{ flex:1, fontSize: isChild?13:14, fontWeight:500, color: cat.is_active ? "#1a3a2a" : "#aaa" }}>
+          {isChild && <span style={{ color:"#ccc", marginRight:4 }}>└</span>}
+          {cat.name}
+        </span>
+
+        {/* 状态切换 */}
+        <button onClick={() => toggleActive(cat)} style={{ fontSize:11, padding:"4px 10px", borderRadius:20, border:"none", cursor:"pointer", background: cat.is_active ? "#e8f5ee" : "#f0f0f0", color: cat.is_active ? "#2d7a58" : "#aaa", fontWeight:600, flexShrink:0 }}>
+          {cat.is_active ? "显示" : "隐藏"}
+        </button>
+
+        {/* 删除 */}
+        <button onClick={() => deleteCat(cat)} style={{ width:26, height:26, borderRadius:"50%", border:"none", background:"transparent", color:"#ddd", fontSize:14, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}
+          onMouseEnter={e => e.currentTarget.style.color="#e05a3a"}
+          onMouseLeave={e => e.currentTarget.style.color="#ddd"}
+        >✕</button>
+      </div>
+    );
+  };
+
   return (
     <div style={{ position:"fixed", inset:0, zIndex:400, display:"flex", alignItems:"flex-end" }}>
       <div onClick={onClose} style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0.45)", backdropFilter:"blur(4px)" }} />
-      <div style={{ position:"relative", width:"100%", background:"#f4faf7", borderRadius:"24px 24px 0 0", maxHeight:"82vh", display:"flex", flexDirection:"column", animation:"slideUp 0.3s cubic-bezier(.22,.68,0,1.2)" }}>
+      <div style={{ position:"relative", width:"100%", background:"#f4faf7", borderRadius:"24px 24px 0 0", maxHeight:"88vh", display:"flex", flexDirection:"column", animation:"slideUp 0.3s cubic-bezier(.22,.68,0,1.2)" }}>
         <div style={{ display:"flex", justifyContent:"center", padding:"12px 0 0" }}>
           <div style={{ width:36, height:4, borderRadius:2, background:"#c8e0d4" }} />
         </div>
         <div style={{ padding:"12px 20px 0", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
           <div>
             <div style={{ fontSize:16, fontWeight:700, color:"#1a3a2a" }}>管理分类</div>
-            <div style={{ fontSize:11, color:"#7a9a85", marginTop:2 }}>点击图标区域可上传自定义图片/动图</div>
+            <div style={{ fontSize:11, color:"#7a9a85", marginTop:2 }}>
+              拖动 ⠿ 调整顺序 · 点击图标可上传自定义图片
+              {saving && <span style={{ color:"#2d7a58", marginLeft:6 }}>保存中…</span>}
+            </div>
           </div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:"#aaa", fontSize:20, cursor:"pointer" }}>×</button>
         </div>
 
         <div style={{ flex:1, overflowY:"auto", padding:"12px 20px 8px" }}>
-          {/* 新增分类 */}
-          <div style={{ display:"flex", gap:8, marginBottom:16, alignItems:"center" }}>
-            <select value={newIcon} onChange={e=>setNewIcon(e.target.value)} style={{ width:52, padding:"9px 4px", borderRadius:10, border:"1.5px solid rgba(45,122,88,0.2)", background:"#fff", fontSize:16, textAlign:"center", outline:"none" }}>
-              {ICONS.map(i => <option key={i} value={i}>{i}</option>)}
-            </select>
-            <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCat()} placeholder="新分类名称" style={{ flex:1, padding:"10px 12px", borderRadius:10, border:"1.5px solid rgba(45,122,88,0.2)", background:"#fff", fontSize:14, color:"#1a3a2a", outline:"none", fontFamily:"inherit" }} />
-            <button onClick={addCat} disabled={!newName.trim()} style={{ padding:"9px 16px", background: newName.trim()?"#2d7a58":"#ccc", color:"#fff", border:"none", borderRadius:10, fontSize:14, fontWeight:600, cursor: newName.trim()?"pointer":"not-allowed" }}>添加</button>
+
+          {/* ── 新增分类表单 ── */}
+          <div style={{ background:"rgba(255,255,255,0.7)", borderRadius:14, padding:"12px 14px", marginBottom:16, border:"1.5px solid rgba(45,122,88,0.12)" }}>
+            <div style={{ fontSize:12, fontWeight:600, color:"#2d7a58", marginBottom:10 }}>+ 新增分类</div>
+
+            {/* 图标 + 名称 */}
+            <div style={{ display:"flex", gap:8, marginBottom:8, alignItems:"center" }}>
+              <select value={newIcon} onChange={e=>setNewIcon(e.target.value)} style={{ width:52, padding:"9px 4px", borderRadius:10, border:"1.5px solid rgba(45,122,88,0.2)", background:"#fff", fontSize:16, textAlign:"center", outline:"none" }}>
+                {ICONS.map(i => <option key={i} value={i}>{i}</option>)}
+              </select>
+              <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addCat()} placeholder="新分类名称" style={{ flex:1, padding:"10px 12px", borderRadius:10, border:"1.5px solid rgba(45,122,88,0.2)", background:"#fff", fontSize:14, color:"#1a3a2a", outline:"none", fontFamily:"inherit" }} />
+            </div>
+
+            {/* 父分类选择 */}
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <div style={{ flex:1 }}>
+                <select value={newParentId} onChange={e=>setNewParentId(e.target.value)}
+                  style={{ width:"100%", padding:"9px 12px", borderRadius:10, border:"1.5px solid rgba(45,122,88,0.2)", background:"#fff", fontSize:13, color:"#1a3a2a", outline:"none", fontFamily:"inherit" }}>
+                  <option value="">顶级分类（不归属任何父类）</option>
+                  {parents.map(p => <option key={p.id} value={p.id}>{p.icon ?? ""} {p.name} 的子分类</option>)}
+                </select>
+              </div>
+              <button onClick={addCat} disabled={!newName.trim()} style={{ padding:"9px 18px", background: newName.trim()?"#2d7a58":"#ccc", color:"#fff", border:"none", borderRadius:10, fontSize:14, fontWeight:600, cursor: newName.trim()?"pointer":"not-allowed", flexShrink:0 }}>添加</button>
+            </div>
           </div>
 
-          {/* 分类列表 */}
-          {list.map(cat => {
-            const busy = uploading === cat.id;
+          {/* ── 分类列表（可拖拽排序） ── */}
+          {parents.map((cat, idx) => {
+            const ch = children(cat.id);
+            const isExpanded = expandedPar[cat.id];
             return (
-              <div key={cat.id} style={{ display:"flex", alignItems:"center", gap:12, padding:"10px 14px", background:"rgba(255,255,255,0.8)", borderRadius:14, marginBottom:8, border:"1px solid rgba(255,255,255,0.9)" }}>
+              <SortableRow
+                key={cat.id}
+                index={idx}
+                cat={cat}
+                onDragStart={handleDragStart}
+                onDragEnter={handleDragEnter}
+                onDragEnd={handleDragEnd}
+                isDragging={dragFrom === idx}
+                isOver={dragOver === idx && dragFrom !== idx}
+              >
+                {/* 父分类行 */}
+                {renderCatRow(cat)}
 
-                {/* 图标（可点击上传） */}
-                <div style={{ position:"relative", flexShrink:0 }}>
-                  <div
-                    onClick={() => fileRefs.current[cat.id]?.click()}
-                    style={{ width:44, height:44, borderRadius:12, overflow:"hidden", background:"rgba(45,122,88,0.08)", display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer", border:"1.5px dashed rgba(45,122,88,0.25)", position:"relative" }}
-                  >
-                    {busy
-                      ? <div style={{ width:18, height:18, border:"2px solid rgba(45,122,88,0.2)", borderTopColor:"#2d7a58", borderRadius:"50%", animation:"spin 0.7s linear infinite" }} />
-                      : cat.icon_url
-                        ? <img src={cat.icon_url} alt={cat.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                        : <span style={{ fontSize:20 }}>{cat.icon}</span>
-                    }
-                    {/* 上传提示遮罩 */}
-                    <div style={{ position:"absolute", inset:0, background:"rgba(0,0,0,0)", display:"flex", alignItems:"center", justifyContent:"center", borderRadius:10, transition:"background 0.2s" }}
-                      onMouseEnter={e => e.currentTarget.style.background="rgba(0,0,0,0.15)"}
-                      onMouseLeave={e => e.currentTarget.style.background="rgba(0,0,0,0)"}
-                    >
-                      <span style={{ fontSize:10, color:"#fff", fontWeight:700, opacity:0, transition:"opacity 0.2s" }}
-                        onMouseEnter={e => e.currentTarget.style.opacity="1"}
-                        onMouseLeave={e => e.currentTarget.style.opacity="0"}
-                      >上传</span>
-                    </div>
+                {/* 子分类展开区 */}
+                {ch.length > 0 && (
+                  <div style={{ padding:"0 14px 4px 14px" }}>
+                    <button onClick={() => setExpandedPar(e => ({ ...e, [cat.id]: !isExpanded }))}
+                      style={{ width:"100%", padding:"6px 10px", background: isExpanded ? "rgba(45,122,88,0.08)" : "rgba(45,122,88,0.04)", border:"none", borderRadius:8, fontSize:11, color:"#2d7a58", cursor:"pointer", textAlign:"left", display:"flex", alignItems:"center", gap:4, marginBottom: isExpanded ? 8 : 6 }}>
+                      <span style={{ transition:"transform 0.2s", display:"inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0)" }}>▶</span>
+                      子分类 ({ch.length})
+                      <span style={{ color:"#aaa", marginLeft:4 }}>{ch.map(c=>c.name).join("、")}</span>
+                    </button>
+
+                    {isExpanded && (
+                      <div style={{ background:"rgba(255,255,255,0.5)", borderRadius:10, overflow:"hidden", marginBottom:6 }}>
+                        {ch.map((child, ci) => (
+                          <div key={child.id} style={{ borderBottom: ci < ch.length-1 ? "1px solid rgba(45,122,88,0.06)" : "none" }}>
+                            {renderCatRow(child, true, ci, ch.length, cat.id)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {/* 清除小按钮 */}
-                  {cat.icon_url && (
-                    <button onClick={() => clearIconUrl(cat)} style={{ position:"absolute", top:-5, right:-5, width:16, height:16, borderRadius:"50%", background:"#e05a3a", border:"1.5px solid #fff", color:"#fff", fontSize:9, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", padding:0, lineHeight:1 }}>✕</button>
-                  )}
-                  <input
-                    ref={el => fileRefs.current[cat.id] = el}
-                    type="file" accept="image/*,.gif"
-                    onChange={e => handleIconUpload(cat, e.target.files?.[0])}
-                    style={{ display:"none" }}
-                  />
-                </div>
-
-                <span style={{ flex:1, fontSize:14, fontWeight:500, color: cat.is_active ? "#1a3a2a" : "#aaa" }}>{cat.name}</span>
-
-                <button onClick={() => toggleActive(cat)} style={{ fontSize:11, padding:"4px 10px", borderRadius:20, border:"none", cursor:"pointer", background: cat.is_active ? "#e8f5ee" : "#f0f0f0", color: cat.is_active ? "#2d7a58" : "#aaa", fontWeight:600, flexShrink:0 }}>
-                  {cat.is_active ? "显示中" : "已隐藏"}
-                </button>
-                <button onClick={() => deleteCat(cat.id)} style={{ width:28, height:28, borderRadius:"50%", border:"none", background:"transparent", color:"#ddd", fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}
-                  onMouseEnter={e => e.currentTarget.style.color="#e05a3a"}
-                  onMouseLeave={e => e.currentTarget.style.color="#ddd"}
-                >✕</button>
-              </div>
+                )}
+              </SortableRow>
             );
           })}
+
+          {/* 没有父分类的孤立子分类（理论上不会有，保护性显示） */}
+          {list.filter(c => c.parent_id && !parents.find(p=>p.id===c.parent_id)).map(orphan => (
+            <div key={orphan.id} style={{ background:"rgba(255,220,200,0.3)", borderRadius:14, marginBottom:8, border:"1px dashed #fcc" }}>
+              {renderCatRow(orphan)}
+            </div>
+          ))}
         </div>
 
         <div style={{ padding:"12px 20px 32px", flexShrink:0 }}>
@@ -361,7 +542,7 @@ export default function MenuManagePage({ supabase }) {
   const [menuItems,  setMenuItems]  = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [activeCat,  setActiveCat]  = useState("all");
-  const [editItem,   setEditItem]   = useState(null);   // null | item | "new"
+  const [editItem,   setEditItem]   = useState(null);
   const [showCatMgr, setShowCatMgr] = useState(false);
   const [deleting,   setDeleting]   = useState(null);
 
@@ -392,7 +573,16 @@ export default function MenuManagePage({ supabase }) {
     await supabase.from("menu_items").update({ is_available: newVal }).eq("id", item.id);
   };
 
-  const filtered = activeCat === "all" ? menuItems : menuItems.filter(m => m.category_id === activeCat);
+  // 筛选：选中父分类时，同时显示其子分类的菜品
+  const filtered = (() => {
+    if (activeCat === "all") return menuItems;
+    const cat = categories.find(c => c.id === activeCat);
+    const childIds = categories.filter(c => c.parent_id === activeCat).map(c => c.id);
+    return menuItems.filter(m => m.category_id === activeCat || (cat && childIds.includes(m.category_id)));
+  })();
+
+  // 分类筛选 Tab 只显示顶级分类
+  const topCats = categories.filter(c => !c.parent_id).sort((a,b) => a.sort_order - b.sort_order);
 
   const PALETTE = [
     { bg:"#d4ede3", fg:"#2d7a58" },{ bg:"#fde8d8", fg:"#c4622d" },
@@ -400,6 +590,17 @@ export default function MenuManagePage({ supabase }) {
     { bg:"#fdf0d5", fg:"#a07030" },{ bg:"#e5f0e0", fg:"#3a7030" },
   ];
   function hashId(s){ let h=0; for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))&0xffff; return h; }
+
+  // 获取菜品所属分类名（含父分类路径）
+  const getCatLabel = (catId) => {
+    const cat = categories.find(c => c.id === catId);
+    if (!cat) return "";
+    if (cat.parent_id) {
+      const parent = categories.find(c => c.id === cat.parent_id);
+      return parent ? `${parent.name} › ${cat.name}` : cat.name;
+    }
+    return cat.name;
+  };
 
   if (loading) return (
     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", flex:1 }}>
@@ -421,16 +622,20 @@ export default function MenuManagePage({ supabase }) {
           </button>
         </div>
 
-        {/* 分类筛选 */}
+        {/* 分类筛选（仅顶级 + 全部） */}
         <div style={{ overflowX:"auto", display:"flex", gap:8, padding:"0 16px 12px", flexShrink:0 }}>
-          {[{ id:"all", name:"全部", icon:"✦" }, ...categories].map(cat => {
+          {[{ id:"all", name:"全部", icon:"✦" }, ...topCats].map(cat => {
             const active = activeCat === cat.id;
+            const count = cat.id === "all"
+              ? menuItems.length
+              : menuItems.filter(m => {
+                  const childIds = categories.filter(c => c.parent_id === cat.id).map(c => c.id);
+                  return m.category_id === cat.id || childIds.includes(m.category_id);
+                }).length;
             return (
               <button key={cat.id} onClick={() => setActiveCat(cat.id)} style={{ flexShrink:0, padding:"7px 14px", borderRadius:20, border: active ? "none" : "1.5px solid rgba(45,122,88,0.15)", background: active ? "#2d7a58" : "rgba(255,255,255,0.7)", color: active ? "#fff" : "#4a7a60", fontSize:12, fontWeight: active ? 600 : 400, cursor:"pointer", display:"flex", alignItems:"center", gap:5, backdropFilter:"blur(8px)", boxShadow: active ? "0 2px 10px rgba(45,122,88,0.3)" : "none", transition:"all 0.2s" }}>
                 <span>{cat.icon}</span>{cat.name}
-                <span style={{ opacity:0.7, fontSize:11 }}>
-                  ({cat.id === "all" ? menuItems.length : menuItems.filter(m=>m.category_id===cat.id).length})
-                </span>
+                <span style={{ opacity:0.7, fontSize:11 }}>({count})</span>
               </button>
             );
           })}
@@ -455,11 +660,12 @@ export default function MenuManagePage({ supabase }) {
 
                 {/* 信息 */}
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
                     <span style={{ fontSize:14, fontWeight:600, color:"#1a3a2a" }}>{item.name}</span>
                     {!item.is_available && <span style={{ fontSize:10, color:"#aaa", background:"#f0f0f0", padding:"1px 6px", borderRadius:10 }}>已下架</span>}
                   </div>
-                  <div style={{ fontSize:11, color:"#7a9a85", marginTop:2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.description || "暂无描述"}</div>
+                  <div style={{ fontSize:10, color:"#aaa", marginTop:1 }}>{getCatLabel(item.category_id)}</div>
+                  <div style={{ fontSize:11, color:"#7a9a85", marginTop:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.description || "暂无描述"}</div>
                   <div style={{ fontSize:14, fontWeight:700, color:"#2d7a58", marginTop:4 }}>¥{item.price}</div>
                 </div>
 

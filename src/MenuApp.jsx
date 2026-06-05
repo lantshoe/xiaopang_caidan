@@ -8,7 +8,7 @@ import AuthPage from "./AuthPage";
 
 const SUPABASE_URL  = "https://udawpaivdegqhlyvnffs.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkYXdwYWl2ZGVncWhseXZuZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDUxNTAsImV4cCI6MjA5NDA4MTE1MH0.2aPiAEdFq1S4NBQ-BUDjhGx4WpLzvvUMk_1e0njROWg";
-const DEV_MODE = false;
+const DEV_MODE = true;
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
@@ -239,15 +239,16 @@ function CartSheet({ cartItems, menuItems, onAdd, onSub, onClear, onOrder, onClo
 
 // ─── 菜单页 ────────────────────────────────────────────────────
 function MenuPage({ supabase, PriceIcon }) {
-  const [categories, setCategories] = useState([]);
-  const [menuItems,  setMenuItems]  = useState([]);
-  const [loading,    setLoading]    = useState(true);
-  const [error,      setError]      = useState(null);
-  const [activeCat,  setActiveCat]  = useState(null);
-  const [cart,       setCart]       = useState({});
-  const [showCart,   setShowCart]   = useState(false);
-  const [toast,      setToast]      = useState(false);
-  const [ordering,   setOrdering]   = useState(false);
+  const [categories,   setCategories]   = useState([]);
+  const [menuItems,    setMenuItems]    = useState([]);
+  const [loading,      setLoading]      = useState(true);
+  const [error,        setError]        = useState(null);
+  const [activeCat,    setActiveCat]    = useState(null);
+  const [expandedCats, setExpandedCats] = useState({}); // 哪些父分类展开了子分类
+  const [cart,         setCart]         = useState({});
+  const [showCart,     setShowCart]     = useState(false);
+  const [toast,        setToast]        = useState(false);
+  const [ordering,     setOrdering]     = useState(false);
   const catRefs          = useRef({});
   const rightRef         = useRef(null);
   const scrollingByClick = useRef(false);
@@ -260,8 +261,10 @@ function MenuPage({ supabase, PriceIcon }) {
         supabase.from("menu_items").select("*").order("sort_order"),
       ]);
       if (e1) throw e1; if (e2) throw e2;
-      setCategories(cats??[]); setMenuItems(items??[]);
-      if (cats?.length) setActiveCat(cats[0].id);
+      setCategories(cats ?? []);
+      setMenuItems(items ?? []);
+      const topCats = (cats ?? []).filter(c => !c.parent_id);
+      if (topCats.length) setActiveCat(topCats[0].id);
     } catch { setError("菜单加载失败"); }
     finally { setLoading(false); }
   }, [supabase]);
@@ -270,9 +273,9 @@ function MenuPage({ supabase, PriceIcon }) {
 
   const addToCart   = id => setCart(c => ({ ...c, [id]: (c[id]||0)+1 }));
   const subFromCart = id => setCart(c => { const n={...c,[id]:(c[id]||1)-1}; if(n[id]===0) delete n[id]; return n; });
-  const cartItems   = Object.entries(cart).map(([id,qty])=>({ id, qty }));
-  const totalQty    = cartItems.reduce((s,{qty})=>s+qty, 0);
-  const totalPrice  = cartItems.reduce((s,{id,qty})=>{ const m=menuItems.find(m=>m.id===id); return s+(m?Number(m.price)*qty:0); },0).toFixed(2);
+  const cartItems  = Object.entries(cart).map(([id,qty])=>({ id, qty }));
+  const totalQty   = cartItems.reduce((s,{qty})=>s+qty, 0);
+  const totalPrice = cartItems.reduce((s,{id,qty})=>{ const m=menuItems.find(m=>m.id===id); return s+(m?Number(m.price)*qty:0); },0).toFixed(2);
 
   const handleOrder = async () => {
     if (!cartItems.length||ordering) return;
@@ -290,61 +293,206 @@ function MenuPage({ supabase, PriceIcon }) {
     finally { setOrdering(false); }
   };
 
-  const handleCatClick = id => {
-    setActiveCat(id); scrollingByClick.current=true;
-    const el=catRefs.current[id];
-    if (el&&rightRef.current) rightRef.current.scrollTo({ top:el.offsetTop-8, behavior:"smooth" });
-    setTimeout(()=>{ scrollingByClick.current=false; },700);
+  const topCats    = categories.filter(c => !c.parent_id);
+  const childrenOf = (pid) => categories.filter(c => c.parent_id === pid);
+  const isParentActive = (parentId) =>
+    activeCat === parentId || childrenOf(parentId).some(c => c.id === activeCat);
+
+  // ── 核心滚动函数：用 scrollIntoView 最准确 ──
+  const scrollTocat = (catId) => {
+    const el = catRefs.current[catId];
+    if (!el || !rightRef.current) return;
+    // 算出元素在滚动容器内的 top，然后减去一点让标题完整露出
+    const ct     = rightRef.current;
+    const elTop  = el.getBoundingClientRect().top;
+    const ctTop  = ct.getBoundingClientRect().top;
+    // 减 4px 让标题顶部刚好贴着容器顶，不被遮住
+    const target = ct.scrollTop + (elTop - ctTop) - 4;
+    ct.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
   };
 
+  // 点击顶级分类
+  const handleParentClick = (cat) => {
+    const children = childrenOf(cat.id);
+    if (children.length > 0) {
+      // 有子分类：切换展开/收起
+      setExpandedCats(e => ({ ...e, [cat.id]: !e[cat.id] }));
+    }
+    // 无论有无子分类，都跳转到右侧该分类
+    setActiveCat(cat.id);
+    scrollingByClick.current = true;
+    scrollTocat(cat.id);
+    setTimeout(() => { scrollingByClick.current = false; }, 800);
+  };
+
+  // 点击子分类
+  const handleChildClick = (child, parentId) => {
+    setActiveCat(child.id);
+    scrollingByClick.current = true;
+    scrollTocat(child.id);
+    setTimeout(() => { scrollingByClick.current = false; }, 800);
+  };
+
+  // 右侧滚动 → 同步高亮左侧，并自动展开对应父分类
   const handleRightScroll = () => {
     if (scrollingByClick.current) return;
-    const ct=rightRef.current; if (!ct) return;
-    let cur=categories[0]?.id;
-    for (const cat of categories) { const el=catRefs.current[cat.id]; if (el&&el.offsetTop-16<=ct.scrollTop) cur=cat.id; }
-    setActiveCat(cur);
+    const ct = rightRef.current; if (!ct) return;
+    const ctTop = ct.getBoundingClientRect().top;
+    // 收集所有有 ref 的分类，找最后一个顶部 <= 容器顶部+8 的
+    let cur = topCats[0]?.id ?? null;
+    for (const cat of categories) {
+      const el = catRefs.current[cat.id];
+      if (!el) continue;
+      const elTop = el.getBoundingClientRect().top - ctTop;
+      if (elTop <= 8) cur = cat.id;
+    }
+    if (cur && cur !== activeCat) {
+      setActiveCat(cur);
+      // 如果滚到了子分类，自动展开其父分类
+      const curCat = categories.find(c => c.id === cur);
+      if (curCat?.parent_id) {
+        setExpandedCats(e => e[curCat.parent_id] ? e : { ...e, [curCat.parent_id]: true });
+      }
+    }
   };
 
   if (loading) return <Spinner />;
-  if (error)   return <div style={{ margin:16, padding:"14px 16px", background:"#fff3f0", borderRadius:12, border:"1px solid #fcc", display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:13, color:"#c04040" }}>{error}</span><button onClick={loadMenu} style={{ fontSize:12, color:"#2d7a58", border:"none", background:"none", cursor:"pointer", fontWeight:600 }}>重试</button></div>;
+  if (error) return (
+    <div style={{ margin:16, padding:"14px 16px", background:"#fff3f0", borderRadius:12, border:"1px solid #fcc", display:"flex", justifyContent:"space-between" }}>
+      <span style={{ fontSize:13, color:"#c04040" }}>{error}</span>
+      <button onClick={loadMenu} style={{ fontSize:12, color:"#2d7a58", border:"none", background:"none", cursor:"pointer", fontWeight:600 }}>重试</button>
+    </div>
+  );
 
   return (
     <>
       <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
-        <div style={{ width:68, flexShrink:0, overflowY:"auto", background:"rgba(255,255,255,0.35)", backdropFilter:"blur(10px)", borderRight:"1px solid rgba(45,122,88,0.1)", display:"flex", flexDirection:"column", gap:2, padding:"8px 4px" }}>
-          {categories.map(cat => {
-            const active = activeCat===cat.id;
+
+        {/* ── 左侧导航 ── */}
+        <div style={{ width:68, flexShrink:0, overflowY:"auto", background:"rgba(255,255,255,0.35)", backdropFilter:"blur(10px)", borderRight:"1px solid rgba(45,122,88,0.1)", display:"flex", flexDirection:"column", gap:1, padding:"8px 4px" }}>
+          {topCats.map((cat, idx) => {
+            const children  = childrenOf(cat.id);
+            const expanded  = !!expandedCats[cat.id];
+            const pActive   = isParentActive(cat.id);
+
             return (
-              <button key={cat.id} onClick={()=>handleCatClick(cat.id)} style={{ width:"100%", padding:"10px 4px", border:"none", cursor:"pointer", borderRadius:12, display:"flex", flexDirection:"column", alignItems:"center", gap:3, background:active?"rgba(45,122,88,0.12)":"transparent", position:"relative" }}>
-                {active && <div style={{ position:"absolute", left:0, top:"50%", transform:"translateY(-50%)", width:3, height:24, borderRadius:"0 3px 3px 0", background:"#2d7a58" }} />}
-                {/* 图标：优先显示上传的图片，否则显示 emoji */}
-                <div style={{ width:36, height:36, borderRadius:10, overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", background: cat.icon_url ? "transparent" : (active?"rgba(45,122,88,0.1)":"rgba(0,0,0,0.03)"), transition:"all 0.2s" }}>
-                  {cat.icon_url
-                    ? <img src={cat.icon_url} alt={cat.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
-                    : <span style={{ fontSize:18, color:active?"#2d7a58":"#7a9a85" }}>{cat.icon}</span>
-                  }
-                </div>
-                <span style={{ fontSize:10, fontWeight:active?600:400, color:active?"#2d7a58":"#7a9a85", lineHeight:1.2, textAlign:"center", wordBreak:"keep-all" }}>{cat.name}</span>
-              </button>
+              <div key={cat.id} style={{ marginTop: idx > 0 ? 2 : 0 }}>
+                {/* 顶级分类按钮 */}
+                <button
+                  onClick={() => handleParentClick(cat)}
+                  style={{
+                    width:"100%", padding:"10px 4px 8px", border:"none", cursor:"pointer",
+                    borderRadius:12, display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+                    background: pActive ? "rgba(45,122,88,0.11)" : "transparent",
+                    position:"relative",
+                  }}
+                >
+                  {pActive && <div style={{ position:"absolute", left:0, top:"50%", transform:"translateY(-50%)", width:3, height:24, borderRadius:"0 3px 3px 0", background:"#2d7a58" }} />}
+                  <div style={{ width:36, height:36, borderRadius:10, overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", background: cat.icon_url ? "transparent" : (pActive ? "rgba(45,122,88,0.1)" : "rgba(0,0,0,0.03)"), transition:"all 0.2s" }}>
+                    {cat.icon_url
+                      ? <img src={cat.icon_url} alt={cat.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                      : <span style={{ fontSize:18, color: pActive ? "#2d7a58" : "#7a9a85" }}>{cat.icon}</span>
+                    }
+                  </div>
+                  <span style={{ fontSize:10, fontWeight: pActive?600:400, color: pActive?"#2d7a58":"#7a9a85", lineHeight:1.2, textAlign:"center", wordBreak:"keep-all" }}>{cat.name}</span>
+                  {/* 有子分类时显示展开箭头 */}
+                  {children.length > 0 && (
+                    <span style={{ fontSize:8, color: pActive?"#2d7a58":"#bbb", lineHeight:1, display:"inline-block", transition:"transform 0.2s", transform: expanded ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
+                  )}
+                </button>
+
+                {/* 子分类列表（受 expanded 控制） */}
+                {children.length > 0 && expanded && (
+                  <div style={{ paddingLeft:4, paddingRight:2, borderLeft:"2px solid rgba(45,122,88,0.12)", marginLeft:8, marginBottom:2 }}>
+                    {children.map(child => {
+                      const cActive = activeCat === child.id;
+                      return (
+                        <button
+                          key={child.id}
+                          onClick={() => handleChildClick(child, cat.id)}
+                          style={{
+                            width:"100%", padding:"6px 2px", border:"none", cursor:"pointer",
+                            borderRadius:8, display:"flex", flexDirection:"column", alignItems:"center", gap:2,
+                            background: cActive ? "rgba(45,122,88,0.1)" : "transparent",
+                            position:"relative",
+                          }}
+                        >
+                          {cActive && <div style={{ position:"absolute", left:-6, top:"50%", transform:"translateY(-50%)", width:2, height:16, borderRadius:"0 2px 2px 0", background:"#2d7a58" }} />}
+                          <div style={{ width:28, height:28, borderRadius:8, overflow:"hidden", display:"flex", alignItems:"center", justifyContent:"center", background: child.icon_url ? "transparent" : (cActive ? "rgba(45,122,88,0.1)" : "rgba(0,0,0,0.03)") }}>
+                            {child.icon_url
+                              ? <img src={child.icon_url} alt={child.name} style={{ width:"100%", height:"100%", objectFit:"cover" }} />
+                              : <span style={{ fontSize:13, color: cActive?"#2d7a58":"#9ab8a8" }}>{child.icon}</span>
+                            }
+                          </div>
+                          <span style={{ fontSize:9, fontWeight: cActive?600:400, color: cActive?"#2d7a58":"#9ab8a8", lineHeight:1.2, textAlign:"center", wordBreak:"keep-all" }}>{child.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
+
+        {/* ── 右侧菜品内容（无 sticky，避免遮挡） ── */}
         <div ref={rightRef} onScroll={handleRightScroll} style={{ flex:1, overflowY:"auto", padding:"0 12px 120px" }}>
-          {categories.map(cat => (
-            <div key={cat.id} ref={el=>catRefs.current[cat.id]=el}>
-              <div style={{ padding:"16px 0 4px", fontSize:13, fontWeight:600, color:"#2d7a58", display:"flex", alignItems:"center", gap:6, position:"sticky", top:0, background:"linear-gradient(180deg,rgba(240,250,244,0.97) 70%,transparent 100%)", backdropFilter:"blur(4px)", zIndex:1 }}>
-                <span>{cat.icon}</span><span>{cat.name}</span>
-                <span style={{ fontSize:11, color:"#aaa", fontWeight:400 }}>({menuItems.filter(m=>m.category_id===cat.id).length})</span>
+          {topCats.map(parent => {
+            const children   = childrenOf(parent.id);
+            const parentItems = menuItems.filter(m => m.category_id === parent.id);
+            const totalCount  = parentItems.length + children.flatMap(c => menuItems.filter(m => m.category_id === c.id)).length;
+
+            return (
+              <div key={parent.id}>
+                {/* 父分类标题 —— ref 绑这里，不用 sticky */}
+                <div
+                  ref={el => { catRefs.current[parent.id] = el; }}
+                  style={{ padding:"16px 0 6px", fontSize:13, fontWeight:600, color:"#2d7a58", display:"flex", alignItems:"center", gap:6 }}
+                >
+                  <span>{parent.icon}</span>
+                  <span>{parent.name}</span>
+                  {children.length > 0 && (
+                    <span style={{ fontSize:10, color:"#aaa", background:"rgba(45,122,88,0.07)", padding:"1px 7px", borderRadius:10, fontWeight:400 }}>
+                      {children.map(c => c.name).join(" · ")}
+                    </span>
+                  )}
+                  <span style={{ fontSize:11, color:"#aaa", fontWeight:400 }}>({totalCount})</span>
+                </div>
+                {/* 父分类直属菜品 */}
+                {parentItems.map(item => (
+                  <ItemCard key={item.id} item={item} qty={cart[item.id]||0} onAdd={()=>addToCart(item.id)} onSub={()=>subFromCart(item.id)} PriceIcon={PriceIcon} />
+                ))}
+
+                {/* 子分类段落 */}
+                {children.map(child => {
+                  const childItems = menuItems.filter(m => m.category_id === child.id);
+                  if (childItems.length === 0) return null;
+                  return (
+                    <div key={child.id}>
+                      <div
+                        ref={el => { catRefs.current[child.id] = el; }}
+                        style={{ padding:"10px 0 5px", fontSize:12, fontWeight:600, color:"#5a8a6a", display:"flex", alignItems:"center", gap:5, marginLeft:4 }}
+                      >
+                        <span style={{ color:"rgba(45,122,88,0.35)", fontSize:10 }}>└</span>
+                        <span>{child.icon}</span>
+                        <span>{child.name}</span>
+                        <span style={{ fontSize:11, color:"#aaa", fontWeight:400 }}>({childItems.length})</span>
+                      </div>
+                      <div style={{ paddingLeft:8, borderLeft:"2px solid rgba(45,122,88,0.08)", marginLeft:6 }}>
+                        {childItems.map(item => (
+                          <ItemCard key={item.id} item={item} qty={cart[item.id]||0} onAdd={()=>addToCart(item.id)} onSub={()=>subFromCart(item.id)} PriceIcon={PriceIcon} />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              {menuItems.filter(m=>m.category_id===cat.id).map(item=>(
-                <ItemCard key={item.id} item={item} qty={cart[item.id]||0} onAdd={()=>addToCart(item.id)} onSub={()=>subFromCart(item.id)} PriceIcon={PriceIcon} />
-              ))}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
-      {/* FAB 购物车 */}
+      {/* FAB */}
       <button onClick={()=>setShowCart(true)} style={{ position:"fixed", bottom:72, right:20, width:60, height:60, borderRadius:"50%", background:totalQty>0?"linear-gradient(135deg,#2d7a58,#3a9068)":"rgba(255,255,255,0.85)", border:totalQty>0?"none":"1.5px solid rgba(45,122,88,0.25)", backdropFilter:"blur(12px)", boxShadow:totalQty>0?"0 6px 24px rgba(45,122,88,0.45)":"0 4px 16px rgba(0,0,0,0.1)", cursor:"pointer", zIndex:100, display:"flex", alignItems:"center", justifyContent:"center", padding:0 }}>
         <span style={{ fontSize:26 }}>🛒</span>
         {totalQty>0 && <div style={{ position:"absolute", top:-2, right:-2, background:"#e05a3a", color:"#fff", borderRadius:"50%", minWidth:20, height:20, fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center", padding:"0 4px", border:"2px solid #fff" }}>{totalQty>99?"99+":totalQty}</div>}
@@ -363,6 +511,7 @@ function MenuPage({ supabase, PriceIcon }) {
     </>
   );
 }
+
 
 // ─── 主 App ────────────────────────────────────────────────────
 export default function App() {
