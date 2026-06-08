@@ -665,7 +665,7 @@ export default function App() {
       `}</style>
 
       {/* 顶部标题栏 */}
-      <div style={{ padding:"48px 16px 12px", background:"linear-gradient(180deg,rgba(45,122,88,0.1) 0%,transparent 100%)", flexShrink:0 }}>
+      <div style={{ padding:"24px 16px 12px", background:"linear-gradient(180deg,rgba(45,122,88,0.1) 0%,transparent 100%)", flexShrink:0 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           {/* 左上角 Logo，长按进入图标配置 */}
           <button
