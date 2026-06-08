@@ -123,7 +123,7 @@ export default function AdminPage({ supabase }) {
   return (
     <div style={{ flex:1, overflowY:"auto", padding:"12px 16px 32px" }}>
       {/* 提示音（静音的短音频，靠 JS 触发） */}
-      <audio ref={audioRef} src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_8cb3eb1d8e.mp3?filename=notification-sound-7062.mp3" preload="auto" />
+      {/* <audio ref={audioRef} src="https://cdn.pixabay.com/download/audio/2022/03/15/audio_8cb3eb1d8e.mp3?filename=notification-sound-7062.mp3" preload="auto" /> */}
 
       {/* 顶部统计 */}
       <div style={{ display:"flex", gap:10, marginBottom:16 }}>

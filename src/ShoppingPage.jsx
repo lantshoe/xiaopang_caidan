@@ -19,7 +19,7 @@ function getWeekKey(ts) {
   const d = new Date(ts);
   const day = d.getDay() || 7;
   const mon = new Date(d); mon.setDate(d.getDate() - day + 1);
-  return `${mon.getFullYear()}-W${String(Math.ceil((((mon - new Date(mon.getFullYear(),0,1))/86400000)+1)/7)).padStart(2,"0")}`;
+  return `${mon.getFullYear()}-W${String(Math.ceil((((mon - new Date(mon.getFullYear(),0,1))/86400000)+1)/7)).padStart(2,"00")}`;
 }
 
 function getMonthKey(ts) {
@@ -198,7 +198,7 @@ function AmountBubble({ color, onSave, onSkip }) {
         }}>
           <span style={{ fontSize:13, color:"#888" }}>¥</span>
           <input
-            ref={inputRef} type="number" value={val}
+            ref={inputRef} type="number" step="0.01" value={val}
             onChange={e => setVal(e.target.value)} onKeyDown={handleKey}
             placeholder="输入金额"
             style={{ background:"transparent", border:"none", outline:"none", fontSize:14, color:"#333", width:"100%", fontFamily:"inherit" }}
@@ -217,6 +217,12 @@ function AmountBubble({ color, onSave, onSkip }) {
   );
 }
 
+// ─── 格式化金额显示（去掉无意义的 .00） ────────────────────────
+function formatAmount(amount) {
+  const n = Number(amount);
+  return n % 1 === 0 ? n.toFixed(0) : n.toFixed(2);
+}
+
 // ─── 单张便签 ──────────────────────────────────────────────────
 // 子条目状态：0 = 未处理，1 = 已买，2 = 跳过（缺货/没买到）
 function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
@@ -224,8 +230,12 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
   const subItems = parseItems(item.content);
   const isMulti  = subItems.length > 1;
 
-  // 0=未处理 1=已买 2=跳过
+  // FIX: 以 item.content 为依赖，编辑后重置 subState，避免状态数组长度错位
   const [subState, setSubState] = useState(() => new Array(subItems.length).fill(0));
+  useEffect(() => {
+    setSubState(new Array(parseItems(item.content).length).fill(0));
+  }, [item.content]);
+
   const [showAmountBubble, setShowAmountBubble] = useState(false);
 
   // 循环切换：0→1→2→0；已完成整张时不可操作
@@ -234,10 +244,8 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
     setSubState(prev => {
       const next = [...prev];
       next[i] = (next[i] + 1) % 3;
-      // 全部都处理过（已买或跳过）→ 弹金额气泡
-      const updated = next;
-      if (updated.every(s => s !== 0)) setShowAmountBubble(true);
-      return updated;
+      if (next.every(s => s !== 0)) setShowAmountBubble(true);
+      return next;
     });
   };
 
@@ -246,13 +254,13 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
     if (!item.is_done) setShowAmountBubble(true);
   };
 
-  // 长按编辑（未完成时）
+  // FIX: 长按时间从 600ms 延长到 1200ms
   const pressTimer = useRef(null);
   const handlePressStart = (e) => {
     if (item.is_done) return;
     pressTimer.current = setTimeout(() => {
       onOpenEdit(item);
-    }, 600);
+    }, 1200);
   };
   const handlePressEnd = () => clearTimeout(pressTimer.current);
 
@@ -282,7 +290,7 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
   const subIcon = (s) => {
     if (s === 1) return { bg:"#2d7a58", border:"#2d7a58", text:"✓", color:"#fff" };
     if (s === 2) return { bg:"#f0f0ec", border:"#ccc",    text:"✕", color:"#bbb" };
-    return null; // 未处理：空圆圈
+    return null;
   };
 
   return (
@@ -353,7 +361,6 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
                     WebkitTapHighlightColor:"transparent",
                   }}
                 >
-                  {/* 状态圆圈（整张已完成时隐藏） */}
                   {!item.is_done && (
                     <div style={{
                       width:20, height:20, borderRadius:"50%", flexShrink:0,
@@ -376,7 +383,6 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
                     transition:"all 0.25s",
                     fontStyle: st === 2 ? "italic" : "normal",
                   }}>{line}</span>
-                  {/* 跳过标签 */}
                   {st === 2 && !item.is_done && (
                     <span style={{
                       fontSize:9, color:"#bbb", background:"rgba(0,0,0,0.05)",
@@ -404,7 +410,6 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <span style={{ fontSize:10, color:"#bbb" }}>{formatDate(item.created_at)}</span>
 
-            {/* 多条进度 */}
             {isMulti && !item.is_done && (doneCount > 0 || skippedCount > 0) && !allHandled && (
               <span style={{ fontSize:11, color:c.line, fontWeight:600 }}>
                 {doneCount}/{subItems.length} 已买
@@ -412,7 +417,7 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
               </span>
             )}
 
-            {/* 金额标签 */}
+            {/* FIX: 金额使用 formatAmount，保留小数 */}
             {item.amount > 0 && (
               <span style={{
                 fontSize:12, fontWeight:700,
@@ -420,7 +425,7 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
                 background: item.is_done ? "#eee" : "rgba(45,122,88,0.1)",
                 padding:"2px 8px", borderRadius:20,
                 textDecoration: item.is_done ? "line-through" : "none",
-              }}>¥{item.amount}</span>
+              }}>¥{formatAmount(item.amount)}</span>
             )}
           </div>
 
@@ -462,7 +467,6 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
           </div>
         </div>
 
-        {/* 金额气泡 */}
         {showAmountBubble && (
           <AmountBubble
             color={c}
@@ -502,8 +506,9 @@ function StatsSummary({ items }) {
         display:"flex", flexDirection:"column", justifyContent:"space-between",
       }}>
         <div style={{ fontSize:10, color:"#7a9a85", letterSpacing:0.5 }}>{periodLabel}已花</div>
+        {/* FIX: 统计栏金额也使用 formatAmount */}
         <div style={{ fontSize:22, fontWeight:700, color:"#1a3a2a", marginTop:2 }}>
-          ¥{spent.toFixed(0)}
+          ¥{formatAmount(spent)}
         </div>
         <div style={{ display:"flex", gap:4, marginTop:6 }}>
           {[["week","按周"],["month","按月"],["all","累计"]].map(([v,l]) => (
@@ -529,7 +534,7 @@ function StatsSummary({ items }) {
         }}>
           <div style={{ fontSize:10, color:"#7a9a85" }}>预算待购</div>
           <div style={{ fontSize:18, fontWeight:700, color: pendingTotal > 0 ? "#e09030" : "#1a3a2a", marginTop:2 }}>
-            {pendingTotal > 0 ? `¥${pendingTotal.toFixed(0)}` : "—"}
+            {pendingTotal > 0 ? `¥${formatAmount(pendingTotal)}` : "—"}
           </div>
         </div>
       </div>
@@ -545,7 +550,7 @@ export default function ShoppingPage({ supabase }) {
   const [showDone,     setShowDone]     = useState(false);
   const [confirm,      setConfirm]      = useState(false);
   const [showAddSheet, setShowAddSheet] = useState(false);
-  const [editItem,     setEditItem]     = useState(null); // 正在编辑的便签
+  const [editItem,     setEditItem]     = useState(null);
 
   const loadItems = useCallback(async () => {
     setError(null);
@@ -575,7 +580,6 @@ export default function ShoppingPage({ supabase }) {
     });
   };
 
-  // 编辑保存：更新 content 和 color_idx，同时重置完成状态
   const handleEdit = async (updated) => {
     setItems(prev => prev.map(i => i.id === updated.id ? { ...i, content: updated.content, color_idx: updated.color_idx } : i));
     await supabase.from("shopping_items")
@@ -636,7 +640,6 @@ export default function ShoppingPage({ supabase }) {
         />
       )}
 
-      {/* 新增 或 编辑 弹窗 */}
       {(showAddSheet || editItem) && (
         <AddSheet
           onAdd={handleAdd}
