@@ -5,6 +5,8 @@ import ShoppingPage from "./ShoppingPage";
 import HistoryPage from "./HistoryPage";
 import MenuManagePage from "./MenuManagePage";
 import AuthPage from "./AuthPage";
+import PantryPage from "./PantryPage";
+
 
 const SUPABASE_URL  = "https://udawpaivdegqhlyvnffs.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVkYXdwYWl2ZGVncWhseXZuZmZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1MDUxNTAsImV4cCI6MjA5NDA4MTE1MH0.2aPiAEdFq1S4NBQ-BUDjhGx4WpLzvvUMk_1e0njROWg";
@@ -31,6 +33,8 @@ const TABS = [
   { id:"history",  label:"历史",  defaultIcon:"🕐" },
   { id:"manage",   label:"菜单",  defaultIcon:"⚙️" },
   { id:"shopping", label:"采购",  defaultIcon:"🛒" },
+  { id:"pantry",   label:"食材", defaultIcon:"🥬" },
+
 ];
 
 // ─── 图标配置弹窗 ──────────────────────────────────────────────
@@ -524,7 +528,7 @@ export default function App() {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   const logoTimer = useRef(null);
-  const TITLE = { menu:"小胖菜单 ✦", admin:"订单管理", history:"历史订单", manage:"菜单管理", shopping:"采购备忘" };
+  const TITLE = { menu:"小胖菜单 ✦", admin:"订单管理", history:"历史订单", manage:"菜单管理", shopping:"采购备忘", pantry:"食材库存"};
 
   // ── 监听登录状态 ──
   useEffect(() => {
@@ -725,6 +729,7 @@ export default function App() {
         {tab === "history"  && <HistoryPage    supabase={supabase} />}
         {tab === "manage"   && <MenuManagePage supabase={supabase} />}
         {tab === "shopping" && <ShoppingPage   supabase={supabase} />}
+        {tab === "pantry" && <PantryPage supabase={supabase} />}
       </div>
 
       {/* 底部 Tab Bar */}

@@ -17,9 +17,11 @@ function formatDate(ts) {
 
 function getWeekKey(ts) {
   const d = new Date(ts);
-  const day = d.getDay() || 7;
-  const mon = new Date(d); mon.setDate(d.getDate() - day + 1);
-  return `${mon.getFullYear()}-W${String(Math.ceil((((mon - new Date(mon.getFullYear(),0,1))/86400000)+1)/7)).padStart(2,"00")}`;
+  const dow = d.getDay(); // 0=Sun
+  const diff = dow === 0 ? -6 : 1 - dow; // 退到周一
+  const mon = new Date(d);
+  mon.setDate(d.getDate() + diff);
+  return mon.toLocaleDateString("sv"); // YYYY-MM-DD of that Monday
 }
 
 function getMonthKey(ts) {
@@ -28,8 +30,9 @@ function getMonthKey(ts) {
 }
 
 function getWeekLabel(key) {
-  const [y, w] = key.split("-W");
-  return `${y}年 第${w}周`;
+  // key 现在是周一的 YYYY-MM-DD
+  const d = new Date(key);
+  return `${d.getFullYear()}年 ${d.getMonth()+1}月${d.getDate()}日起`;
 }
 
 function getMonthLabel(key) {
@@ -76,6 +79,7 @@ function AddSheet({ onAdd, onClose, editItem, onEdit }) {
   const isEdit = !!editItem;
   const [text,  setText]  = useState(isEdit ? editItem.content : "");
   const [color, setColor] = useState(isEdit ? (editItem.color_idx ?? 0) : 0);
+  const [store, setStore] = useState(isEdit ? (editItem.store ?? "") : "");
   const textRef = useRef(null);
 
   useEffect(() => { setTimeout(() => textRef.current?.focus(), 100); }, []);
@@ -84,9 +88,9 @@ function AddSheet({ onAdd, onClose, editItem, onEdit }) {
     const t = text.trim();
     if (!t) return;
     if (isEdit) {
-      onEdit({ ...editItem, content: t, color_idx: color });
+      onEdit({ ...editItem, content: t, color_idx: color, store: store.trim() || null });
     } else {
-      onAdd({ content: t, color_idx: color });
+      onAdd({ content: t, color_idx: color, store: store.trim() || null });
     }
     onClose();
   };
@@ -140,6 +144,28 @@ function AddSheet({ onAdd, onClose, editItem, onEdit }) {
               paddingTop:4, paddingLeft:4, position:"relative", zIndex:1, letterSpacing:"0.3px",
             }}
           />
+        </div>
+        {/* 商店输入 */}
+        <div style={{
+          display:"flex", alignItems:"center", gap:8, marginBottom:12,
+          background:"rgba(255,255,255,0.7)", borderRadius:10, padding:"7px 10px",
+          border:"1px solid rgba(45,122,88,0.15)",
+        }}>
+          <span style={{ fontSize:13, color:"#7a9a85", flexShrink:0 }}>🏪</span>
+          <input
+            value={store} onChange={e => setStore(e.target.value)}
+            placeholder="购买商店（可留空）"
+            style={{
+              flex:1, background:"transparent", border:"none", outline:"none",
+              fontSize:13, color:"#1a3a2a", fontFamily:"inherit",
+            }}
+          />
+          {store && (
+            <button onClick={() => setStore("")} style={{
+              background:"none", border:"none", color:"#ccc", fontSize:14,
+              cursor:"pointer", padding:0, lineHeight:1,
+            }}>×</button>
+          )}
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ display:"flex", gap:6 }}>
@@ -223,9 +249,63 @@ function formatAmount(amount) {
   return n % 1 === 0 ? n.toFixed(0) : n.toFixed(2);
 }
 
+// ─── 同步确认气泡 ─────────────────────────────────────────────
+function SyncBubble({ item, onSync, onClose }) {
+  const subItems = parseItems(item.content);
+  const [selected, setSelected] = useState(() => new Set(subItems.map((_, i) => i)));
+
+  const toggle = (i) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(i) ? next.delete(i) : next.add(i);
+    return next;
+  });
+
+  return (
+    <div style={{
+      marginTop:10, background:"rgba(255,255,255,0.95)", backdropFilter:"blur(8px)",
+      borderRadius:12, padding:"10px 12px", border:"1px solid rgba(45,122,88,0.25)",
+      animation:"noteIn 0.2s cubic-bezier(.22,.68,0,1.2) both",
+    }} onClick={e => e.stopPropagation()}>
+      <div style={{ fontSize:11, color:"#2d7a58", fontWeight:700, marginBottom:8 }}>
+        🥬 同步到食材库（选择要同步的条目）
+      </div>
+      <div style={{ marginBottom:10 }}>
+        {subItems.map((line, i) => (
+          <div key={i} onClick={() => toggle(i)} style={{
+            display:"flex", alignItems:"center", gap:8, padding:"5px 0",
+            cursor:"pointer", borderBottom: i < subItems.length-1 ? "1px dashed rgba(45,122,88,0.1)" : "none",
+          }}>
+            <div style={{
+              width:18, height:18, borderRadius:"50%", flexShrink:0,
+              border:`1.5px solid ${selected.has(i) ? "#2d7a58" : "#ddd"}`,
+              background: selected.has(i) ? "#2d7a58" : "transparent",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:10, color:"#fff", transition:"all 0.15s",
+            }}>
+              {selected.has(i) ? "✓" : ""}
+            </div>
+            <span style={{ fontSize:13, color: selected.has(i) ? "#1a3a2a" : "#bbb" }}>{line}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display:"flex", gap:8 }}>
+        <button onClick={onClose} style={{
+          flex:1, padding:"7px 0", borderRadius:8, border:"1px solid #ddd",
+          background:"#fff", color:"#aaa", fontSize:12, cursor:"pointer",
+        }}>取消</button>
+        <button onClick={() => onSync([...selected].map(i => subItems[i]))} disabled={selected.size === 0} style={{
+          flex:2, padding:"7px 0", borderRadius:8, border:"none",
+          background: selected.size > 0 ? "#2d7a58" : "#ccc",
+          color:"#fff", fontSize:12, fontWeight:700, cursor: selected.size > 0 ? "pointer" : "not-allowed",
+        }}>同步 {selected.size} 项到食材库</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── 单张便签 ──────────────────────────────────────────────────
 // 子条目状态：0 = 未处理，1 = 已买，2 = 跳过（缺货/没买到）
-function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
+function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit, onSync }) {
   const c = NOTE_COLORS[item.color_idx ?? 0];
   const subItems = parseItems(item.content);
   const isMulti  = subItems.length > 1;
@@ -254,15 +334,18 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
     if (!item.is_done) setShowAmountBubble(true);
   };
 
-  // FIX: 长按时间从 600ms 延长到 1200ms
+  // FIX: 长按时间从 600ms 延长到 3600ms
   const pressTimer = useRef(null);
   const handlePressStart = (e) => {
     if (item.is_done) return;
     pressTimer.current = setTimeout(() => {
       onOpenEdit(item);
-    }, 1200);
+    }, 3600);
   };
   const handlePressEnd = () => clearTimeout(pressTimer.current);
+
+  // 同步气泡
+  const [showSyncBubble, setShowSyncBubble] = useState(false);
 
   // 删除二步确认
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -410,6 +493,13 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
           <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
             <span style={{ fontSize:10, color:"#bbb" }}>{formatDate(item.created_at)}</span>
 
+            {item.store && (
+              <span style={{
+                fontSize:10, color:"#7a9a85", background:"rgba(45,122,88,0.07)",
+                padding:"1px 7px", borderRadius:10, display:"flex", alignItems:"center", gap:3,
+              }}>🏪 {item.store}</span>
+            )}
+
             {isMulti && !item.is_done && (doneCount > 0 || skippedCount > 0) && !allHandled && (
               <span style={{ fontSize:11, color:c.line, fontWeight:600 }}>
                 {doneCount}/{subItems.length} 已买
@@ -431,10 +521,18 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
 
           <div style={{ display:"flex", gap:6, alignItems:"center" }}>
             {item.is_done ? (
-              <button onClick={() => onToggleBack(item)} style={{
-                fontSize:11, color:"#bbb", background:"none", border:"none",
-                cursor:"pointer", padding:"4px 6px", textDecoration:"underline",
-              }}>撤回</button>
+              <div style={{ display:"flex", gap:4, alignItems:"center" }}>
+                <button onClick={() => onToggleBack(item)} style={{
+                  fontSize:11, color:"#bbb", background:"none", border:"none",
+                  cursor:"pointer", padding:"4px 6px", textDecoration:"underline",
+                }}>撤回</button>
+                {onSync && !showSyncBubble && (
+                  <button onClick={(e) => { e.stopPropagation(); setShowSyncBubble(true); }} style={{
+                    fontSize:11, color:"#2d7a58", background:"rgba(45,122,88,0.08)",
+                    border:"none", borderRadius:10, cursor:"pointer", padding:"4px 8px", fontWeight:600,
+                  }}>🥬 同步食材</button>
+                )}
+              </div>
             ) : (
               !isMulti && (
                 <div style={{
@@ -474,6 +572,14 @@ function StickyNote({ item, onComplete, onToggleBack, onDelete, onOpenEdit }) {
             onSkip={() => { setShowAmountBubble(false); onComplete(item, null); }}
           />
         )}
+
+        {showSyncBubble && (
+          <SyncBubble
+            item={item}
+            onSync={(names) => { setShowSyncBubble(false); onSync && onSync(item, names); }}
+            onClose={() => setShowSyncBubble(false)}
+          />
+        )}
       </div>
     </div>
   );
@@ -486,58 +592,105 @@ function StatsSummary({ items }) {
   const now = Date.now();
   const currentKey = view === "week" ? getWeekKey(now) : getMonthKey(now);
 
-  const spent = items
-    .filter(i => i.is_done && i.amount > 0)
-    .filter(i => view === "all" || (view === "week" ? getWeekKey(i.created_at) : getMonthKey(i.created_at)) === currentKey)
+  const doneWithAmount = items.filter(i => i.is_done && i.amount > 0);
+  const spent = doneWithAmount
+    .filter(i => view === "all" || (view === "week" ? getWeekKey(i.completed_at ?? i.created_at) : getMonthKey(i.completed_at ?? i.created_at)) === currentKey)
     .reduce((s, i) => s + Number(i.amount), 0);
 
   const pendingTotal = items.filter(i => !i.is_done && i.amount > 0).reduce((s, i) => s + Number(i.amount), 0);
   const todoCount    = items.filter(i => !i.is_done).length;
+
+  // 按商店统计（只统计有金额的已完成项）
+  const storeStats = doneWithAmount
+    .filter(i => view === "all" || (view === "week"
+      ? getWeekKey(i.completed_at ?? i.created_at)
+      : getMonthKey(i.completed_at ?? i.created_at)) === currentKey)
+    .reduce((acc, i) => {
+      const key = i.store || "未记录商店";
+      acc[key] = (acc[key] ?? 0) + Number(i.amount);
+      return acc;
+    }, {});
+  const storeList = Object.entries(storeStats).sort((a, b) => b[1] - a[1]);
 
   if (items.length === 0) return null;
 
   const periodLabel = view === "week" ? "本周" : view === "month" ? "本月" : "累计";
 
   return (
-    <div style={{ margin:"0 16px 14px", display:"flex", gap:8, alignItems:"stretch" }}>
-      <div style={{
-        flex:2, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
-        borderRadius:14, padding:"10px 14px", border:"1px solid rgba(255,255,255,0.9)",
-        display:"flex", flexDirection:"column", justifyContent:"space-between",
-      }}>
-        <div style={{ fontSize:10, color:"#7a9a85", letterSpacing:0.5 }}>{periodLabel}已花</div>
-        {/* FIX: 统计栏金额也使用 formatAmount */}
-        <div style={{ fontSize:22, fontWeight:700, color:"#1a3a2a", marginTop:2 }}>
-          ¥{formatAmount(spent)}
-        </div>
-        <div style={{ display:"flex", gap:4, marginTop:6 }}>
-          {[["week","按周"],["month","按月"],["all","累计"]].map(([v,l]) => (
-            <button key={v} onClick={() => setView(v)} style={{
-              padding:"2px 8px", borderRadius:10, border:"none", cursor:"pointer", fontSize:10,
-              background: view===v ? "#2d7a58" : "rgba(45,122,88,0.08)",
-              color: view===v ? "#fff" : "#7a9a85", transition:"all 0.2s",
-            }}>{l}</button>
-          ))}
-        </div>
-      </div>
-      <div style={{ flex:1, display:"flex", flexDirection:"column", gap:8 }}>
+    <div style={{ margin:"0 16px 14px" }}>
+      {/* 主统计行 */}
+      <div style={{ display:"flex", gap:8, alignItems:"stretch", marginBottom: storeList.length > 0 ? 8 : 0 }}>
         <div style={{
-          flex:1, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
-          borderRadius:14, padding:"8px 12px", border:"1px solid rgba(255,255,255,0.9)",
+          flex:2, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
+          borderRadius:14, padding:"10px 14px", border:"1px solid rgba(255,255,255,0.9)",
+          display:"flex", flexDirection:"column", justifyContent:"space-between",
         }}>
-          <div style={{ fontSize:10, color:"#7a9a85" }}>待买项</div>
-          <div style={{ fontSize:18, fontWeight:700, color:"#1a3a2a", marginTop:2 }}>{todoCount}</div>
+          <div style={{ fontSize:10, color:"#7a9a85", letterSpacing:0.5 }}>{periodLabel}已花</div>
+          <div style={{ fontSize:22, fontWeight:700, color:"#1a3a2a", marginTop:2 }}>
+            ¥{formatAmount(spent)}
+          </div>
+          <div style={{ display:"flex", gap:4, marginTop:6 }}>
+            {[["week","按周"],["month","按月"],["all","累计"]].map(([v,l]) => (
+              <button key={v} onClick={() => setView(v)} style={{
+                padding:"2px 8px", borderRadius:10, border:"none", cursor:"pointer", fontSize:10,
+                background: view===v ? "#2d7a58" : "rgba(45,122,88,0.08)",
+                color: view===v ? "#fff" : "#7a9a85", transition:"all 0.2s",
+              }}>{l}</button>
+            ))}
+          </div>
         </div>
-        <div style={{
-          flex:1, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
-          borderRadius:14, padding:"8px 12px", border:"1px solid rgba(255,255,255,0.9)",
-        }}>
-          <div style={{ fontSize:10, color:"#7a9a85" }}>预算待购</div>
-          <div style={{ fontSize:18, fontWeight:700, color: pendingTotal > 0 ? "#e09030" : "#1a3a2a", marginTop:2 }}>
-            {pendingTotal > 0 ? `¥${formatAmount(pendingTotal)}` : "—"}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", gap:8 }}>
+          <div style={{
+            flex:1, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
+            borderRadius:14, padding:"8px 12px", border:"1px solid rgba(255,255,255,0.9)",
+          }}>
+            <div style={{ fontSize:10, color:"#7a9a85" }}>待买项</div>
+            <div style={{ fontSize:18, fontWeight:700, color:"#1a3a2a", marginTop:2 }}>{todoCount}</div>
+          </div>
+          <div style={{
+            flex:1, background:"rgba(255,255,255,0.65)", backdropFilter:"blur(12px)",
+            borderRadius:14, padding:"8px 12px", border:"1px solid rgba(255,255,255,0.9)",
+          }}>
+            <div style={{ fontSize:10, color:"#7a9a85" }}>预算待购</div>
+            <div style={{ fontSize:18, fontWeight:700, color: pendingTotal > 0 ? "#e09030" : "#1a3a2a", marginTop:2 }}>
+              {pendingTotal > 0 ? `¥${formatAmount(pendingTotal)}` : "—"}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* 按商店明细（暂时隐藏） */}
+      {false && storeList.length > 0 && (
+        <div style={{
+          background:"rgba(255,255,255,0.55)", backdropFilter:"blur(12px)",
+          borderRadius:14, padding:"10px 14px", border:"1px solid rgba(255,255,255,0.9)",
+        }}>
+          <div style={{ fontSize:10, color:"#7a9a85", marginBottom:8, letterSpacing:0.5 }}>🏪 按商店</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {storeList.map(([store, total]) => (
+              <div key={store} style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+                <span style={{ fontSize:12, color: store === "未记录商店" ? "#bbb" : "#3a5a46" }}>
+                  {store}
+                </span>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  {/* 比例条 */}
+                  <div style={{ width:60, height:4, borderRadius:2, background:"rgba(45,122,88,0.1)", overflow:"hidden" }}>
+                    <div style={{
+                      height:"100%", borderRadius:2,
+                      background: store === "未记录商店" ? "#ddd" : "#2d7a58",
+                      width: `${Math.round((total / spent) * 100)}%`,
+                      transition:"width 0.3s",
+                    }} />
+                  </div>
+                  <span style={{ fontSize:12, fontWeight:700, color: store === "未记录商店" ? "#bbb" : "#2d7a58", minWidth:48, textAlign:"right" }}>
+                    ¥{formatAmount(total)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -574,25 +727,29 @@ export default function ShoppingPage({ supabase }) {
     return () => supabase.removeChannel(ch);
   }, [supabase, loadItems]);
 
-  const handleAdd = async ({ content, color_idx }) => {
+  const handleAdd = async ({ content, color_idx, store }) => {
     await supabase.from("shopping_items").insert({
       content, color_idx: color_idx ?? 0, amount: null, is_done: false,
+      store: store ?? null,
     });
   };
 
   const handleEdit = async (updated) => {
-    setItems(prev => prev.map(i => i.id === updated.id ? { ...i, content: updated.content, color_idx: updated.color_idx } : i));
+    setItems(prev => prev.map(i => i.id === updated.id
+      ? { ...i, content: updated.content, color_idx: updated.color_idx, store: updated.store }
+      : i));
     await supabase.from("shopping_items")
-      .update({ content: updated.content, color_idx: updated.color_idx })
+      .update({ content: updated.content, color_idx: updated.color_idx, store: updated.store ?? null })
       .eq("id", updated.id);
   };
 
   const handleComplete = async (item, amount) => {
+    const completed_at = new Date().toISOString();
     setItems(prev => prev.map(i =>
-      i.id === item.id ? { ...i, is_done: true, amount: amount ?? i.amount } : i
+      i.id === item.id ? { ...i, is_done: true, amount: amount ?? i.amount, completed_at } : i
     ));
     await supabase.from("shopping_items")
-      .update({ is_done: true, amount: amount ?? item.amount })
+      .update({ is_done: true, amount: amount ?? item.amount, completed_at })
       .eq("id", item.id);
   };
 
@@ -604,6 +761,17 @@ export default function ShoppingPage({ supabase }) {
   const deleteItem = async (id) => {
     setItems(prev => prev.filter(i => i.id !== id));
     await supabase.from("shopping_items").delete().eq("id", id);
+  };
+
+  // 同步到食材库：把选中的名字写入 pantry_pending
+  const handleSync = async (item, names) => {
+    if (!names.length) return;
+    const rows = names.map(name => ({
+      name,
+      source_shopping_id: item.id,
+      handled: false,
+    }));
+    await supabase.from("pantry_pending").insert(rows);
   };
 
   const clearDone = async () => {
@@ -710,6 +878,7 @@ export default function ShoppingPage({ supabase }) {
                     onToggleBack={handleToggleBack}
                     onDelete={deleteItem}
                     onOpenEdit={setEditItem}
+                    onSync={handleSync}
                   />
                 ))}
               </div>
